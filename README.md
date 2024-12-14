@@ -15,7 +15,7 @@ Before running, make sure you have an instance of OpenXR running along with a co
 
 ## Preview and Features
 
-- OpenXR and DirectX (Moving to OpenGL Rendering implemented)
+- OpenXR and DirectX implemented (Moving to OpenGL Rendering)
 - Desktop Window to Display what is shown on the VR Headset via OpenXR (Two Swapchains)
 - Controller detection and input support
 
