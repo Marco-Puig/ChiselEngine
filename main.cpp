@@ -994,7 +994,7 @@ bool CreateAppWindow(HINSTANCE hInstance, int nCmdShow) {
 	wc.lpszClassName = _T("OpenXRWinClass");
 	if (!RegisterClass(&wc)) return false;
 
-	g_hWnd = CreateWindowEx(0, _T("OpenXRWinClass"), _T("OpenXR Desktop Window"),
+	g_hWnd = CreateWindowEx(0, _T("OpenXRWinClass"), _T("ChiselEngine - OpenXR Desktop Window"),
 		WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
 		1280, 720, nullptr, nullptr, hInstance, nullptr);
 	if (!g_hWnd) return false;
