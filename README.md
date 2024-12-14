@@ -1,5 +1,5 @@
 # ChiselEngine
-Chisel Engine is a OpenXR Game Engine that is being developed for my Steam game - Rock Life: The Rock Simulator 
+Chisel Engine is an OpenXR Game Engine that is being developed for my Steam game - Rock Life: The Rock Simulator 
 
 ## Instructions 
 Since this is project is working of a Solution (.sln) file, I recommend to use Visual Studio 2022
