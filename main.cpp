@@ -190,23 +190,38 @@ uint16_t app_inds[] = {
 ///////////////////////////////////////////
 
 int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
-	// Startup Desktop window
-	/*
-	if (!CreateAppWindow(hInstance, nCmdShow)) {
+	// Initialize GLFW (creates the window and OpenGL context)
+	if (!glfwInit()) {
+		MessageBox(nullptr, _T("GLFW initialization failed\n"), _T("Error"), MB_OK);
+		return 1;
+	}
+
+	// Create a GLFW window with an OpenGL context
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5); // For example, OpenGL 4.5 core
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	// glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // if on macOS
+
+	GLFWwindow* window = glfwCreateWindow(1280, 720, "OpenGL + OpenXR", nullptr, nullptr);
+	if (!window) {
 		MessageBox(nullptr, _T("Window creation failed\n"), _T("Error"), MB_OK);
+		glfwTerminate();
 		return 1;
 	}
-	*/
+	glfwMakeContextCurrent(window);
 
-	// Check if OpenGL is available on this system via GLAD
+	// Now that we have a context, we can load OpenGL functions with glad
 	if (!gladLoadGL()) {
-		MessageBox(nullptr, _T("OpenGL initialization failed\n"), _T("Error"), MB_OK);
+		MessageBox(nullptr, _T("Failed to load OpenGL functions\n"), _T("Error"), MB_OK);
+		glfwDestroyWindow(window);
+		glfwTerminate();
 		return 1;
 	}
 
-	// Initialize OpenXR with OpenGL
 	if (!openxr_init("Single file OpenXR", OPENGL_SWAPCHAIN_FORMAT)) {
 		MessageBox(nullptr, _T("OpenXR initialization failed\n"), _T("Error"), MB_OK);
+		glfwDestroyWindow(window);
+		glfwTerminate();
 		return 1;
 	}
 
@@ -214,19 +229,11 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 	app_init();
 
 	bool quit = false;
-	MSG msg = {};
 	while (!quit) {
-		// Standard Windows message pump
-		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-			if (msg.message == WM_QUIT) {
-				quit = true;
-			}
-			else {
-				TranslateMessage(&msg);
-				DispatchMessage(&msg);
-			}
-		}
-		if (quit) break;
+		// Poll for events (Windows and/or GLFW)
+		glfwPollEvents();
+		if (glfwWindowShouldClose(window))
+			quit = true;
 
 		openxr_poll_events(quit);
 		if (quit) break;
@@ -236,8 +243,9 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 			app_update();
 			openxr_render_frame();
 
-			// Swapchain rendering for desktop window
-			// RenderToDesktopWindow(); 
+			// Render your desktop window content as needed
+			// For now, just swap buffers:
+			glfwSwapBuffers(window);
 
 			if (xr_session_state != XR_SESSION_STATE_VISIBLE &&
 				xr_session_state != XR_SESSION_STATE_FOCUSED) {
@@ -247,10 +255,11 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 	}
 
 	openxr_shutdown();
-	opengl_shutdown();
-
+	glfwDestroyWindow(window);
+	glfwTerminate();
 	return 0;
 }
+
 
 
 ///////////////////////////////////////////
@@ -258,34 +267,23 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 ///////////////////////////////////////////
 
 bool openxr_init(const char* app_name, int64_t swapchain_format) {
-	// OpenXR will fail to initialize if we ask for an extension that OpenXR
-	// can't provide! So we need to check our all extensions before 
-	// initializing OpenXR with them. Note that even if the extension is 
-	// present, it's still possible you may not be able to use it. For 
-	// example: the hand tracking extension may be present, but the hand
-	// sensor might not be plugged in or turned on. There are often 
-	// additional checks that should be made before using certain features!
-	vector<const char*> use_extensions;
+	// Extensions we want to use
 	const char* ask_extensions[] = {
 		XR_KHR_OPENGL_ENABLE_EXTENSION_NAME, // Use OpenGL for rendering
-		XR_EXT_DEBUG_UTILS_EXTENSION_NAME,  // Debug utils for extra info
+		XR_EXT_DEBUG_UTILS_EXTENSION_NAME,   // Debug utils for extra info
 	};
 
-	// We'll get a list of extensions that OpenXR provides using this 
-	// enumerate pattern. OpenXR often uses a two-call enumeration pattern 
-	// where the first call will tell you how much memory to allocate, and
-	// the second call will provide you with the actual data!
+	// Enumerate and check for available extensions
 	uint32_t ext_count = 0;
 	xrEnumerateInstanceExtensionProperties(nullptr, 0, &ext_count, nullptr);
-	vector<XrExtensionProperties> xr_exts(ext_count, { XR_TYPE_EXTENSION_PROPERTIES });
+	std::vector<XrExtensionProperties> xr_exts(ext_count, { XR_TYPE_EXTENSION_PROPERTIES });
 	xrEnumerateInstanceExtensionProperties(nullptr, ext_count, &ext_count, xr_exts.data());
 
-	printf("OpenXR extensions available:\n");
+	std::vector<const char*> use_extensions;
 	for (size_t i = 0; i < xr_exts.size(); i++) {
 		printf("- %s\n", xr_exts[i].extensionName);
 
-		// Check if we're asking for this extensions, and add it to our use 
-		// list!
+		// Check if we're asking for this extension
 		for (int32_t ask = 0; ask < _countof(ask_extensions); ask++) {
 			if (strcmp(ask_extensions[ask], xr_exts[i].extensionName) == 0) {
 				use_extensions.push_back(ask_extensions[ask]);
@@ -293,41 +291,35 @@ bool openxr_init(const char* app_name, int64_t swapchain_format) {
 			}
 		}
 	}
-	// If a required extension isn't present, you want to ditch out here!
-	// It's possible something like your rendering API might not be provided
-	// by the active runtime. APIs like OpenGL don't have universal support.
+
+	// Ensure the OpenGL extension is available
 	if (!std::any_of(use_extensions.begin(), use_extensions.end(),
 		[](const char* ext) {
 			return strcmp(ext, XR_KHR_OPENGL_ENABLE_EXTENSION_NAME) == 0;
-		}))
+		})) {
+		MessageBox(nullptr, _T("XR_KHR_opengl_enable not available"), _T("Error"), MB_OK);
 		return false;
+	}
 
-	// Initialize OpenXR with the extensions we've found!
+	// Create the OpenXR instance
 	XrInstanceCreateInfo createInfo = { XR_TYPE_INSTANCE_CREATE_INFO };
-	createInfo.enabledExtensionCount = use_extensions.size();
+	createInfo.enabledExtensionCount = (uint32_t)use_extensions.size();
 	createInfo.enabledExtensionNames = use_extensions.data();
 	createInfo.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
 	strcpy_s(createInfo.applicationInfo.applicationName, app_name);
-	xrCreateInstance(&createInfo, &xr_instance);
 
-	// Check if OpenXR is on this system, if this is null here, the user 
-	// needs to install an OpenXR runtime and ensure it's active!
-	if (xr_instance == nullptr)
+	XrResult res = xrCreateInstance(&createInfo, &xr_instance);
+	if (XR_FAILED(res) || xr_instance == nullptr) {
+		MessageBox(nullptr, _T("Failed to create XR instance\n"), _T("Error"), MB_OK);
 		return false;
+	}
 
-	// Load extension methods that we'll need for this application! There's a
-	// couple ways to do this, and this is a fairly manual one. Chek out this
-	// file for another way to do it:
-	// https://github.com/maluoi/StereoKit/blob/master/StereoKitC/systems/platform/openxr_extensions.h
+	// Load required extension functions
 	xrGetInstanceProcAddr(xr_instance, "xrCreateDebugUtilsMessengerEXT", (PFN_xrVoidFunction*)(&ext_xrCreateDebugUtilsMessengerEXT));
 	xrGetInstanceProcAddr(xr_instance, "xrDestroyDebugUtilsMessengerEXT", (PFN_xrVoidFunction*)(&ext_xrDestroyDebugUtilsMessengerEXT));
 	xrGetInstanceProcAddr(xr_instance, "xrGetOpenGLGraphicsRequirementsKHR", (PFN_xrVoidFunction*)(&ext_xrGetOpenGLGraphicsRequirementsKHR));
 
-	// Set up a really verbose debug log! Great for dev, but turn this off or
-	// down for final builds. WMR doesn't produce much output here, but it
-	// may be more useful for other runtimes?
-	// Here's some extra information about the message types and severities:
-	// https://www.khronos.org/registry/OpenXR/specs/1.0/html/xrspec.html#debug-message-categorization
+	// Set up verbose debug logging
 	XrDebugUtilsMessengerCreateInfoEXT debug_info = { XR_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
 	debug_info.messageTypes =
 		XR_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
@@ -340,77 +332,76 @@ bool openxr_init(const char* app_name, int64_t swapchain_format) {
 		XR_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
 		XR_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
 	debug_info.userCallback = [](XrDebugUtilsMessageSeverityFlagsEXT severity, XrDebugUtilsMessageTypeFlagsEXT types, const XrDebugUtilsMessengerCallbackDataEXT* msg, void* user_data) {
-		// Print the debug message we got! There's a bunch more info we could
-		// add here too, but this is a pretty good start, and you can always
-		// add a breakpoint this line!
 		printf("%s: %s\n", msg->functionName, msg->message);
-
-		// Output to debug window
 		char text[512];
 		sprintf_s(text, "%s: %s", msg->functionName, msg->message);
 		OutputDebugStringA(text);
-
-		// Returning XR_TRUE here will force the calling function to fail
 		return (XrBool32)XR_FALSE;
 		};
-	// Start up the debug utils!
+
 	if (ext_xrCreateDebugUtilsMessengerEXT)
 		ext_xrCreateDebugUtilsMessengerEXT(xr_instance, &debug_info, &xr_debug);
 
-	// Request a form factor from the device (HMD, Handheld, etc.)
+	// Get the system (device) for the desired form factor
 	XrSystemGetInfo systemInfo = { XR_TYPE_SYSTEM_GET_INFO };
 	systemInfo.formFactor = app_config_form;
-	xrGetSystem(xr_instance, &systemInfo, &xr_system_id);
+	res = xrGetSystem(xr_instance, &systemInfo, &xr_system_id);
+	if (XR_FAILED(res)) {
+		MessageBox(nullptr, _T("Failed to get XR system\n"), _T("Error"), MB_OK);
+		return false;
+	}
 
-	// Check what blend mode is valid for this device (opaque vs transparent displays)
-	// We'll just take the first one available!
+	// Get a valid blend mode
 	uint32_t blend_count = 0;
 	xrEnumerateEnvironmentBlendModes(xr_instance, xr_system_id, app_config_view, 1, &blend_count, &xr_blend);
 
-	// OpenXR wants to ensure apps are using the correct graphics card, so this MUST be called 
-	// before xrCreateSession. This is crucial on devices that have multiple graphics cards, 
-	// like laptops with integrated graphics chips in addition to dedicated graphics cards.
-	XrGraphicsRequirementsOpenGLKHR requirement = { XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR };
-	ext_xrGetOpenGLGraphicsRequirementsKHR(xr_instance, xr_system_id, &requirement);
-
-	// A session represents this application's desire to display things! This is where we hook up our graphics API.
-	// This does not start the session, for that, you'll need a call to xrBeginSession, which we do in openxr_poll_events
-	XrGraphicsBindingOpenGLWin32KHR binding = { XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR };
-	XrSessionCreateInfo sessionInfo = { XR_TYPE_SESSION_CREATE_INFO };
-	sessionInfo.next = &binding;
-	sessionInfo.systemId = xr_system_id;
-	xrCreateSession(xr_instance, &sessionInfo, &xr_session);
-
-	// Unable to start a session, may not have an MR device attached or ready
-	if (xr_session == nullptr)
+	// Retrieve the OpenGL graphics requirements
+	XrGraphicsRequirementsOpenGLKHR requirement = { XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_KHR };
+	res = ext_xrGetOpenGLGraphicsRequirementsKHR(xr_instance, xr_system_id, &requirement);
+	if (XR_FAILED(res)) {
+		MessageBox(nullptr, _T("Failed to get OpenGL graphics requirements\n"), _T("Error"), MB_OK);
 		return false;
+	}
 
-	// OpenXR uses a couple different types of reference frames for positioning content, we need to choose one for
-	// displaying our content! STAGE would be relative to the center of your guardian system's bounds, and LOCAL
-	// would be relative to your device's starting location. HoloLens doesn't have a STAGE, so we'll use LOCAL.
+	// Ensure we have a current OpenGL context here
+	if (!wglGetCurrentContext()) {
+		MessageBox(nullptr, _T("No current OpenGL context found\n"), _T("Error"), MB_OK);
+		return false;
+	}
+
+	// Create the session with the OpenGL context
+	XrGraphicsBindingOpenGLWin32KHR graphicsBinding = { XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR };
+	graphicsBinding.hDC = wglGetCurrentDC();
+	graphicsBinding.hGLRC = wglGetCurrentContext();
+
+	XrSessionCreateInfo sessionInfo = { XR_TYPE_SESSION_CREATE_INFO };
+	sessionInfo.next = &graphicsBinding;
+	sessionInfo.systemId = xr_system_id;
+
+	res = xrCreateSession(xr_instance, &sessionInfo, &xr_session);
+	if (XR_FAILED(res) || xr_session == XR_NULL_HANDLE) {
+		MessageBox(nullptr, _T("Failed to create OpenXR session\n"), _T("Error"), MB_OK);
+		return false;
+	}
+
+	// Create a reference space
 	XrReferenceSpaceCreateInfo ref_space = { XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
 	ref_space.poseInReferenceSpace = xr_pose_identity;
 	ref_space.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
 	xrCreateReferenceSpace(xr_session, &ref_space, &xr_app_space);
 
-	// Now we need to find all the viewpoints we need to take care of! For a stereo headset, this should be 2.
-	// Similarly, for an AR phone, we'll need 1, and a VR cave could have 6, or even 12!
+	// Query view configuration
 	uint32_t view_count = 0;
 	xrEnumerateViewConfigurationViews(xr_instance, xr_system_id, app_config_view, 0, &view_count, nullptr);
 	xr_config_views.resize(view_count, { XR_TYPE_VIEW_CONFIGURATION_VIEW });
 	xr_views.resize(view_count, { XR_TYPE_VIEW });
 	xrEnumerateViewConfigurationViews(xr_instance, xr_system_id, app_config_view, view_count, &view_count, xr_config_views.data());
+
+	// Create OpenGL swapchains for each view
 	for (uint32_t i = 0; i < view_count; i++) {
-		// Create a swapchain for this viewpoint! A swapchain is a set of texture buffers used for displaying to screen,
-		// typically this is a backbuffer and a front buffer, one for rendering data to, and one for displaying on-screen.
-		// A note about swapchain image format here! OpenXR doesn't create a concrete image format for the texture, like 
-		// DXGI_FORMAT_R8G8B8A8_UNORM. Instead, it switches to the TYPELESS variant of the provided texture format, like 
-		// DXGI_FORMAT_R8G8B8A8_TYPELESS. When creating an ID3D11RenderTargetView for the swapchain texture, we must specify
-		// a concrete type like DXGI_FORMAT_R8G8B8A8_UNORM, as attempting to create a TYPELESS view will throw errors, so 
-		// we do need to store the format separately and remember it later.
 		XrViewConfigurationView& view = xr_config_views[i];
-		XrSwapchainCreateInfo    swapchain_info = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
-		XrSwapchain              handle;
+		XrSwapchainCreateInfo swapchain_info = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
+		XrSwapchain handle;
 		swapchain_info.arraySize = 1;
 		swapchain_info.mipCount = 1;
 		swapchain_info.faceCount = 1;
@@ -419,29 +410,33 @@ bool openxr_init(const char* app_name, int64_t swapchain_format) {
 		swapchain_info.height = view.recommendedImageRectHeight;
 		swapchain_info.sampleCount = view.recommendedSwapchainSampleCount;
 		swapchain_info.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
-		xrCreateSwapchain(xr_session, &swapchain_info, &handle);
 
-		// Find out how many textures were generated for the swapchain
+		res = xrCreateSwapchain(xr_session, &swapchain_info, &handle);
+		if (XR_FAILED(res)) {
+			MessageBox(nullptr, _T("Failed to create OpenXR swapchain\n"), _T("Error"), MB_OK);
+			return false;
+		}
+
 		uint32_t surface_count = 0;
 		xrEnumerateSwapchainImages(handle, 0, &surface_count, nullptr);
 
-		// We'll want to track our own information about the swapchain, so we can draw stuff onto it! We'll also create
-		// a depth buffer for each generated texture here as well with make_surfacedata.
 		swapchain_t swapchain = {};
 		swapchain.width = swapchain_info.width;
 		swapchain.height = swapchain_info.height;
 		swapchain.handle = handle;
 		swapchain.surface_images.resize(surface_count, { XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR });
 		swapchain.surface_data.resize(surface_count);
+
 		xrEnumerateSwapchainImages(swapchain.handle, surface_count, &surface_count, (XrSwapchainImageBaseHeader*)swapchain.surface_images.data());
-		for (uint32_t i = 0; i < surface_count; i++) {
-			swapchain.surface_data[i] = gl_make_surface_data((XrBaseInStructure&)swapchain.surface_images[i], swapchain.width, swapchain.height);
+		for (uint32_t img_i = 0; img_i < surface_count; img_i++) {
+			swapchain.surface_data[img_i] = gl_make_surface_data((XrBaseInStructure&)swapchain.surface_images[img_i], swapchain.width, swapchain.height);
 		}
 		xr_swapchains.push_back(swapchain);
 	}
 
 	return true;
 }
+
 
 ///////////////////////////////////////////
 
