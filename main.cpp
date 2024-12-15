@@ -198,11 +198,11 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 
 	// Create a GLFW window with an OpenGL context
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5); // For example, OpenGL 4.5 core
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	// glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // if on macOS
 
-	GLFWwindow* window = glfwCreateWindow(1280, 720, "OpenGL + OpenXR", nullptr, nullptr);
+	GLFWwindow* window = glfwCreateWindow(1280, 720, "Chisel Engine", nullptr, nullptr);
+
 	if (!window) {
 		MessageBox(nullptr, _T("Window creation failed\n"), _T("Error"), MB_OK);
 		glfwTerminate();
@@ -228,10 +228,16 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 	openxr_make_actions();
 	app_init();
 
+	glEnable(GL_DEPTH_TEST);
+
 	bool quit = false;
 	while (!quit) {
 		// Poll for events (Windows and/or GLFW)
 		glfwPollEvents();
+
+		// depth buffer
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 		if (glfwWindowShouldClose(window))
 			quit = true;
 
@@ -808,14 +814,8 @@ void gl_render_layer(XrCompositionLayerProjectionView& view, swapchain_surfdata_
 		view.subImage.imageRect.extent.width, view.subImage.imageRect.extent.height);
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	// Now draw the scene
-	// This replaces app_draw(view) call from D3D code
-	// We'll create a separate app_draw function for OpenGL
-
 	extern void app_draw(XrCompositionLayerProjectionView & view);
 	app_draw(view);
-
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -931,137 +931,3 @@ void app_update_predicted() {
 // A window to view on Desktop
 ///////////////////////////////////////////
 
-/*
-// A simple WindowProc
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
-	switch (message) {
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		return 0;
-	}
-	return DefWindowProc(hWnd, message, wParam, lParam);
-}
-
-// Create the window before starting OpenXR initialization
-bool CreateAppWindow(HINSTANCE hInstance, int nCmdShow) {
-	WNDCLASS wc = {};
-	wc.lpfnWndProc = WndProc;
-	wc.hInstance = hInstance;
-	wc.lpszClassName = _T("OpenXRWinClass");
-	if (!RegisterClass(&wc)) return false;
-
-	g_hWnd = CreateWindowEx(0, _T("OpenXRWinClass"), _T("ChiselEngine - OpenXR Desktop Window"),
-		WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-		1280, 720, nullptr, nullptr, hInstance, nullptr);
-	if (!g_hWnd) return false;
-
-	ShowWindow(g_hWnd, nCmdShow);
-	return true;
-}
-
-// Swap chain creation for the desktop window
-bool CreateDesktopSwapChain() {
-	DXGI_SWAP_CHAIN_DESC scd = {};
-	scd.BufferCount = 2;
-	scd.BufferDesc.Width = 1280;
-	scd.BufferDesc.Height = 720;
-	scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	scd.OutputWindow = g_hWnd;
-	scd.SampleDesc.Count = 1;
-	scd.Windowed = TRUE;
-	scd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-
-	IDXGIDevice* dxgiDevice = nullptr;
-	IDXGIAdapter* dxgiAdapter = nullptr;
-	IDXGIFactory* dxgiFactory = nullptr;
-	if (FAILED(d3d_device->QueryInterface(__uuidof(IDXGIDevice), (void**)&dxgiDevice)))
-		return false;
-	if (FAILED(dxgiDevice->GetAdapter(&dxgiAdapter))) {
-		dxgiDevice->Release();
-		return false;
-	}
-	if (FAILED(dxgiAdapter->GetParent(__uuidof(IDXGIFactory), (void**)&dxgiFactory))) {
-		dxgiAdapter->Release();
-		dxgiDevice->Release();
-		return false;
-	}
-
-	HRESULT hr = dxgiFactory->CreateSwapChain(d3d_device, &scd, &g_swapChain);
-	dxgiFactory->Release();
-	dxgiAdapter->Release();
-	dxgiDevice->Release();
-	if (FAILED(hr)) return false;
-
-	// Create a render target view for the swap chain
-	ID3D11Texture2D* pBackBuffer = nullptr;
-	g_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer);
-	d3d_device->CreateRenderTargetView(pBackBuffer, nullptr, &g_swapChainRTV);
-	pBackBuffer->Release();
-
-	return true;
-}
-
-// Render the desktop window
-void RenderToDesktopWindow() {
-	if (g_swapChain == nullptr || g_swapChainRTV == nullptr) return;
-
-	// Choose the first eye’s parameters (eye 0) as a reference.
-	if (xr_swapchains.empty()) return;
-
-	// Set viewport for the desktop window (e.g., the full window)
-	D3D11_VIEWPORT vp = {};
-	vp.Width = 1280.0f;
-	vp.Height = 720.0f;
-	vp.MinDepth = 0.0f;
-	vp.MaxDepth = 1.0f;
-	d3d_context->RSSetViewports(1, &vp);
-
-	// Set the swapchain render target for the desktop
-	float clearColor[4] = { 0.1f, 0.1f, 0.15f, 1.0f };
-	d3d_context->OMSetRenderTargets(1, &g_swapChainRTV, nullptr);
-	d3d_context->ClearRenderTargetView(g_swapChainRTV, clearColor);
-
-	// Now, we want to simulate one of the VR views. We can use the last known poses from `xr_views[0]` (left eye)
-	if (!xr_views.empty()) {
-		XrView& vrView = xr_views[0];
-
-		// Construct the same camera matrices used in app_draw
-		XMMATRIX mat_projection = d3d_xr_projection(vrView.fov, 0.05f, 100.0f);
-		XMMATRIX mat_view = XMMatrixInverse(nullptr, XMMatrixAffineTransformation(
-			DirectX::g_XMOne, DirectX::g_XMZero,
-			XMLoadFloat4((XMFLOAT4*)&vrView.pose.orientation),
-			XMLoadFloat3((XMFLOAT3*)&vrView.pose.position)));
-
-		// Use the same app_draw logic, but adapted:
-		d3d_context->VSSetConstantBuffers(0, 1, &app_constant_buffer);
-		d3d_context->VSSetShader(app_vshader, nullptr, 0);
-		d3d_context->PSSetShader(app_pshader, nullptr, 0);
-
-		UINT strides[] = { sizeof(float) * 6 };
-		UINT offsets[] = { 0 };
-		d3d_context->IASetVertexBuffers(0, 1, &app_vertex_buffer, strides, offsets);
-		d3d_context->IASetIndexBuffer(app_index_buffer, DXGI_FORMAT_R16_UINT, 0);
-		d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		d3d_context->IASetInputLayout(app_shader_layout);
-
-		app_transform_buffer_t transform_buffer;
-		XMStoreFloat4x4(&transform_buffer.viewproj, XMMatrixTranspose(mat_view * mat_projection));
-
-		// Draw the cubes
-		for (size_t i = 0; i < app_cubes.size(); i++) {
-			XMMATRIX mat_model = XMMatrixAffineTransformation(
-				DirectX::g_XMOne * 0.05f, DirectX::g_XMZero,
-				XMLoadFloat4((XMFLOAT4*)&app_cubes[i].orientation),
-				XMLoadFloat3((XMFLOAT3*)&app_cubes[i].position));
-
-			XMStoreFloat4x4(&transform_buffer.world, XMMatrixTranspose(mat_model));
-			d3d_context->UpdateSubresource(app_constant_buffer, 0, nullptr, &transform_buffer, 0, 0);
-			d3d_context->DrawIndexed((UINT)_countof(app_inds), 0, 0);
-		}
-	}
-
-	// Present the desktop window swapchain
-	g_swapChain->Present(1, 0);
-}
-*/
