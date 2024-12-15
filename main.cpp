@@ -1,40 +1,50 @@
-#pragma comment(lib,"D3D11.lib")
-#pragma comment(lib,"D3dcompiler.lib") // for shader compile
-#pragma comment(lib,"Dxgi.lib") // for CreateDXGIFactory1
-
 // Tell OpenXR what platform code we'll be using
 #define XR_USE_PLATFORM_WIN32
-#define XR_USE_GRAPHICS_API_D3D11
+#define XR_USE_GRAPHICS_API_OPENGL
+#define OPENGL_SWAPCHAIN_FORMAT 0x8C43
 
-#include <d3d11.h>
-#include <directxmath.h> // Matrix math functions and objects
-#include <d3dcompiler.h> // For compiling shaders! D3DCompile
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h> // Windows functions such as Window creation
+
+// OpenXR libs and includes
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
+// OpenGL libs and includes
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp> // glm::translate, glm::rotate, glm::scale, glm::perspective
+#include <glm/gtc/quaternion.hpp>
+
 #include <thread> // sleep_for
-#include <vector>
+#include <vector> // dynamic array management for cube positions
 #include <algorithm> // any_of
 
-#include <windows.h>
-#include <tchar.h>
+#include <tchar.h> // TCHAR type for parsing vertex and frag shader code
 
-using namespace std;
-using namespace DirectX; // Matrix math
+
+#include <cstdio> // parse - debug
+#include <cmath> // sin, cos
+
+using namespace std; // standard - std lib 
 
 ///////////////////////////////////////////
 
 struct swapchain_surfdata_t {
-	ID3D11DepthStencilView *depth_view;
-	ID3D11RenderTargetView *target_view;
+	GLuint fbo;
+	GLuint depthbuffer;
 };
 
 struct swapchain_t {
 	XrSwapchain handle;
-	int32_t     width;
-	int32_t     height;
-	vector<XrSwapchainImageD3D11KHR> surface_images;
-	vector<swapchain_surfdata_t>     surface_data;
+	int32_t width;
+	int32_t height;
+	std::vector<XrSwapchainImageOpenGLKHR> surface_images;
+	std::vector<swapchain_surfdata_t>      surface_data;
 };
 
 struct input_state_t {
@@ -51,48 +61,59 @@ struct input_state_t {
 ///////////////////////////////////////////
 
 // Function pointers for some OpenXR extension methods we'll use.
-PFN_xrGetD3D11GraphicsRequirementsKHR ext_xrGetD3D11GraphicsRequirementsKHR = nullptr;
-PFN_xrCreateDebugUtilsMessengerEXT    ext_xrCreateDebugUtilsMessengerEXT    = nullptr;
-PFN_xrDestroyDebugUtilsMessengerEXT   ext_xrDestroyDebugUtilsMessengerEXT   = nullptr;
+PFN_xrGetOpenGLGraphicsRequirementsKHR ext_xrGetOpenGLGraphicsRequirementsKHR = nullptr;
+PFN_xrCreateDebugUtilsMessengerEXT    ext_xrCreateDebugUtilsMessengerEXT = nullptr;
+PFN_xrDestroyDebugUtilsMessengerEXT   ext_xrDestroyDebugUtilsMessengerEXT = nullptr;
 
 ///////////////////////////////////////////
 
 struct app_transform_buffer_t {
-	XMFLOAT4X4 world;
-	XMFLOAT4X4 viewproj;
+	glm::mat4 world;
+	glm::mat4 viewproj;
 };
 
 XrFormFactor            app_config_form = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
 XrViewConfigurationType app_config_view = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
 
-ID3D11VertexShader *app_vshader;
-ID3D11PixelShader  *app_pshader;
-ID3D11InputLayout  *app_shader_layout;
-ID3D11Buffer       *app_constant_buffer;
-ID3D11Buffer       *app_vertex_buffer;
-ID3D11Buffer       *app_index_buffer;
+GLuint app_shader_program = 0;
+GLuint app_uniform_buffer = 0;
 
-vector<XrPosef> app_cubes;
+GLuint app_vao; // VAO (Vertex Array Object) for input layout
 
-HWND                 g_hWnd = nullptr;
-IDXGISwapChain* g_swapChain = nullptr;
-ID3D11RenderTargetView* g_swapChainRTV = nullptr;
+GLuint app_ubo; // Uniform Buffer Object for constant data
+GLuint app_vbo; // Vertex Buffer Object
+GLuint app_ebo; // Element Buffer Object (for indices)
 
-void app_init  ();
-void app_draw  (XrCompositionLayerProjectionView &layerView);
+vector<XrPosef> app_cubes; // Cube positions
+
+HWND g_hWnd = nullptr; // Window handle
+
+GLFWwindow* window; // Assume we have a valid GLFWwindow*
+int desktopWidth = 1280;
+int desktopHeight = 720;
+
+extern uint32_t leftEyeImageIndex; // Set during xrAcquireSwapchainImage calls for left eye
+int left_eye_index = 0; // left eye at index 0
+extern std::vector<swapchain_t> xr_swapchains;
+extern GLFWwindow* window;
+extern int desktopWidth, desktopHeight;
+
+void app_init();
+void app_draw(XrCompositionLayerProjectionView& layerView);
 void app_update();
 void app_update_predicted();
+void opengl_shutdown();
 
 ///////////////////////////////////////////
 
 const XrPosef  xr_pose_identity = { {0,0,0,1}, {0,0,0} };
-XrInstance     xr_instance      = {};
-XrSession      xr_session       = {};
+XrInstance     xr_instance = {};
+XrSession      xr_session = {};
 XrSessionState xr_session_state = XR_SESSION_STATE_UNKNOWN;
-bool           xr_running       = false;
-XrSpace        xr_app_space     = {};
-XrSystemId     xr_system_id     = XR_NULL_SYSTEM_ID;
-input_state_t  xr_input         = { };
+bool           xr_running = false;
+XrSpace        xr_app_space = {};
+XrSystemId     xr_system_id = XR_NULL_SYSTEM_ID;
+input_state_t  xr_input = { };
 XrEnvironmentBlendMode   xr_blend = {};
 XrDebugUtilsMessengerEXT xr_debug = {};
 
@@ -100,65 +121,59 @@ vector<XrView>                  xr_views;
 vector<XrViewConfigurationView> xr_config_views;
 vector<swapchain_t>             xr_swapchains;
 
-bool openxr_init          (const char *app_name, int64_t swapchain_format);
-void openxr_make_actions  ();
-void openxr_shutdown      ();
-void openxr_poll_events   (bool &exit);
-void openxr_poll_actions  ();
+bool openxr_init(const char* app_name, int64_t swapchain_format);
+void openxr_make_actions();
+void openxr_shutdown();
+void openxr_poll_events(bool& exit);
+void openxr_poll_actions();
 void openxr_poll_predicted(XrTime predicted_time);
-void openxr_render_frame  ();
-bool openxr_render_layer  (XrTime predictedTime, vector<XrCompositionLayerProjectionView> &projectionViews, XrCompositionLayerProjection &layer);
+void openxr_render_frame();
+bool openxr_render_layer(XrTime predictedTime, vector<XrCompositionLayerProjectionView>& projectionViews, XrCompositionLayerProjection& layer);
+void gl_swapchain_destroy(swapchain_t& swapchain);
+void gl_render_layer(XrCompositionLayerProjectionView& view, swapchain_surfdata_t& surface);
+swapchain_surfdata_t gl_make_surface_data(XrBaseInStructure& swapchain_img, int32_t width, int32_t height);
 
 ///////////////////////////////////////////
 
-ID3D11Device        *d3d_device        = nullptr;
-ID3D11DeviceContext *d3d_context       = nullptr;
-int64_t              d3d_swapchain_fmt = DXGI_FORMAT_R8G8B8A8_UNORM;
-
-bool                 d3d_init             (LUID &adapter_luid);
-void                 d3d_shutdown         ();
-IDXGIAdapter1       *d3d_get_adapter      (LUID &adapter_luid);
-swapchain_surfdata_t d3d_make_surface_data(XrBaseInStructure &swapchainImage);
-void                 d3d_render_layer     (XrCompositionLayerProjectionView &layerView, swapchain_surfdata_t &surface);
-void                 d3d_swapchain_destroy(swapchain_t &swapchain);
-XMMATRIX             d3d_xr_projection    (XrFovf fov, float clip_near, float clip_far);
-ID3DBlob            *d3d_compile_shader   (const char* hlsl, const char* entrypoint, const char* target);
+// bool CreateAppWindow(HINSTANCE hInstance, int nCmdShow);
+// bool CreateDesktopSwapChain();
+// void RenderToDesktopWindow();
 
 ///////////////////////////////////////////
 
-bool CreateAppWindow(HINSTANCE hInstance, int nCmdShow);
-bool CreateDesktopSwapChain();
-void RenderToDesktopWindow();
+const char* vertex_glsl = R"(
+#version 450 core
+layout (location = 0) in vec3 in_pos;
+layout (location = 1) in vec3 in_norm;
 
-///////////////////////////////////////////
-
-constexpr char app_shader_code[] = R"_(
-cbuffer TransformBuffer : register(b0) {
-	float4x4 world;
-	float4x4 viewproj;
-};
-struct vsIn {
-	float4 pos  : SV_POSITION;
-	float3 norm : NORMAL;
-};
-struct psIn {
-	float4 pos   : SV_POSITION;
-	float3 color : COLOR0;
+layout(std140) uniform TransformBuffer {
+    mat4 world;
+    mat4 viewproj;
 };
 
-psIn vs(vsIn input) {
-	psIn output;
-	output.pos = mul(float4(input.pos.xyz, 1), world);
-	output.pos = mul(output.pos, viewproj);
+out vec3 vColor;
 
-	float3 normal = normalize(mul(float4(input.norm, 0), world).xyz);
+void main() {
+    vec4 worldPos = world * vec4(in_pos,1.0);
+    gl_Position = viewproj * worldPos;
 
-	output.color = saturate(dot(normal, float3(0,1,0))).xxx;
-	return output;
+    vec3 normal = normalize((world * vec4(in_norm,0.0)).xyz);
+    vColor = max(dot(normal, vec3(0,1,0)), 0.0) * vec3(1.0,1.0,1.0);
 }
-float4 ps(psIn input) : SV_TARGET {
-	return float4(input.color, 1);
-})_";
+)";
+
+const char* fragment_glsl = R"(
+#version 450 core
+in vec3 vColor;
+out vec4 fragColor;
+
+void main() {
+    fragColor = vec4(vColor,1.0);
+}
+)";
+
+///////////////////////////////////////////
+// Demo Cube Model 					    //
 
 float app_verts[] = {
 	-1,-1,-1, -1,-1,-1, // Bottom verts
@@ -168,114 +183,155 @@ float app_verts[] = {
 	-1,-1, 1, -1,-1, 1, // Top verts
 	 1,-1, 1,  1,-1, 1,
 	 1, 1, 1,  1, 1, 1,
-	-1, 1, 1, -1, 1, 1, };
+	-1, 1, 1, -1, 1, 1,
+};
 
 uint16_t app_inds[] = {
 	1,2,0, 2,3,0, 4,6,5, 7,6,4,
 	6,2,1, 5,6,1, 3,7,4, 0,3,4,
-	4,5,1, 0,4,1, 2,7,3, 2,6,7, };
+	4,5,1, 0,4,1, 2,7,3, 2,6,7,
+};
+
+///////////////////////////////////////////
 
 ///////////////////////////////////////////
 // Main                                  //
 ///////////////////////////////////////////
 
 int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
-	// Create a window for desktop viewing
-	if (!CreateAppWindow(hInstance, nCmdShow)) {
-		MessageBox(nullptr, "Window creation failed\n", "Error", 1);
+	// Initialize GLFW (creates the window and OpenGL context)
+	if (!glfwInit()) {
+		MessageBox(nullptr, _T("GLFW initialization failed\n"), _T("Error"), MB_OK);
 		return 1;
 	}
 
-	// The rest of your openxr_init call remains the same
-	if (!openxr_init("Single file OpenXR", d3d_swapchain_fmt)) {
-		d3d_shutdown();
-		MessageBox(nullptr, "OpenXR initialization failed\n", "Error", 1);
+	// Create a GLFW window with an OpenGL context
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+	window = glfwCreateWindow(desktopWidth, desktopHeight, "Chisel Engine", nullptr, nullptr);
+
+	if (!window) {
+		MessageBox(nullptr, _T("Window creation failed\n"), _T("Error"), MB_OK);
+		glfwTerminate();
+		return 1;
+	}
+	glfwMakeContextCurrent(window);
+
+	// Now that we have a context, we can load OpenGL functions with glad
+	if (!gladLoadGL()) {
+		MessageBox(nullptr, _T("Failed to load OpenGL functions\n"), _T("Error"), MB_OK);
+		glfwDestroyWindow(window);
+		glfwTerminate();
 		return 1;
 	}
 
-	// Create desktop swapchain
-	if (!CreateDesktopSwapChain()) {
-		d3d_shutdown();
-		MessageBox(nullptr, "Desktop swapchain creation failed\n", "Error", 1);
+	if (!openxr_init("Single file OpenXR", OPENGL_SWAPCHAIN_FORMAT)) {
+		MessageBox(nullptr, _T("OpenXR initialization failed\n"), _T("Error"), MB_OK);
+		glfwDestroyWindow(window);
+		glfwTerminate();
 		return 1;
 	}
 
 	openxr_make_actions();
 	app_init();
 
-	bool quit = false;
-	MSG msg = {};
-	while (!quit) {
+	// Enable depth 
+	glEnable(GL_DEPTH_TEST);
 
-		// Standard Windows message pump
-		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-			if (msg.message == WM_QUIT) {
-				quit = true;
-			}
-			else {
-				TranslateMessage(&msg);
-				DispatchMessage(&msg);
-			}
-		}
-		if (quit) break;
+	bool quit = false;
+	while (!quit) {
+		// Poll for events (Windows and/or GLFW)
+		glfwPollEvents();
+
+		// assign depth buffer
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		if (glfwWindowShouldClose(window))
+			quit = true;
 
 		openxr_poll_events(quit);
 		if (quit) break;
 
 		if (xr_running) {
+			// Poll input actions and update your app logic
 			openxr_poll_actions();
 			app_update();
+
+			// Render the VR frame into the XR swapchains
 			openxr_render_frame();
 
-			// Update Desktop window with what's going on in the headset
-			RenderToDesktopWindow();
+			/*swapchain_t& left_eye_swapchain = xr_swapchains[left_eye_index];
 
+			// Retrieve the left eye's FBO from the current frame's rendered image
+			GLuint left_eye_fbo = left_eye_swapchain.surface_data[leftEyeImageIndex].fbo;
+			int32_t eye_width = left_eye_swapchain.width;
+			int32_t eye_height = left_eye_swapchain.height;
+
+			// Bind the desktop's default framebuffer (window) and clear it
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glViewport(0, 0, desktopWidth, desktopHeight);
+			glClearColor(0, 0, 0, 1);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+			// Blit (copy) the rendered image from the left eye FBO to the desktop window
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, left_eye_fbo);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+			glBlitFramebuffer(
+				0, 0, eye_width, eye_height,        // Source dimensions (left eye FBO)
+				0, 0, desktopWidth, desktopHeight,  // Destination dimensions (desktop window)
+				GL_COLOR_BUFFER_BIT, GL_LINEAR
+			);
+
+			// Swap the desktop window's buffers to present the image
+			glfwSwapBuffers(window);
+			*/
+
+			// If the XR session is not visible or focused, sleep a bit to reduce CPU usage
 			if (xr_session_state != XR_SESSION_STATE_VISIBLE &&
 				xr_session_state != XR_SESSION_STATE_FOCUSED) {
-				this_thread::sleep_for(chrono::milliseconds(250));
+				std::this_thread::sleep_for(std::chrono::milliseconds(250));
 			}
+		}
+		else {
+			// If XR is not running, you could just clear the desktop window and swap buffers, or do nothing
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glViewport(0, 0, desktopWidth, desktopHeight);
+			glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			glfwSwapBuffers(window);
 		}
 	}
 
 	openxr_shutdown();
-	d3d_shutdown();
+	glfwDestroyWindow(window);
+	glfwTerminate();
 	return 0;
 }
-
 
 ///////////////////////////////////////////
 // OpenXR code                           //
 ///////////////////////////////////////////
 
-bool openxr_init(const char *app_name, int64_t swapchain_format) {
-	// OpenXR will fail to initialize if we ask for an extension that OpenXR
-	// can't provide! So we need to check our all extensions before 
-	// initializing OpenXR with them. Note that even if the extension is 
-	// present, it's still possible you may not be able to use it. For 
-	// example: the hand tracking extension may be present, but the hand
-	// sensor might not be plugged in or turned on. There are often 
-	// additional checks that should be made before using certain features!
-	vector<const char*> use_extensions;
-	const char         *ask_extensions[] = { 
-		XR_KHR_D3D11_ENABLE_EXTENSION_NAME, // Use Direct3D11 for rendering
-		XR_EXT_DEBUG_UTILS_EXTENSION_NAME,  // Debug utils for extra info
+bool openxr_init(const char* app_name, int64_t swapchain_format) {
+	// Extensions we want to use
+	const char* ask_extensions[] = {
+		XR_KHR_OPENGL_ENABLE_EXTENSION_NAME, // Use OpenGL for rendering
+		XR_EXT_DEBUG_UTILS_EXTENSION_NAME,   // Debug utils for extra info
 	};
 
-	// We'll get a list of extensions that OpenXR provides using this 
-	// enumerate pattern. OpenXR often uses a two-call enumeration pattern 
-	// where the first call will tell you how much memory to allocate, and
-	// the second call will provide you with the actual data!
+	// Enumerate and check for available extensions
 	uint32_t ext_count = 0;
 	xrEnumerateInstanceExtensionProperties(nullptr, 0, &ext_count, nullptr);
-	vector<XrExtensionProperties> xr_exts(ext_count, { XR_TYPE_EXTENSION_PROPERTIES });
+	std::vector<XrExtensionProperties> xr_exts(ext_count, { XR_TYPE_EXTENSION_PROPERTIES });
 	xrEnumerateInstanceExtensionProperties(nullptr, ext_count, &ext_count, xr_exts.data());
 
-	printf("OpenXR extensions available:\n");
+	std::vector<const char*> use_extensions;
 	for (size_t i = 0; i < xr_exts.size(); i++) {
 		printf("- %s\n", xr_exts[i].extensionName);
 
-		// Check if we're asking for this extensions, and add it to our use 
-		// list!
+		// Check if we're asking for this extension
 		for (int32_t ask = 0; ask < _countof(ask_extensions); ask++) {
 			if (strcmp(ask_extensions[ask], xr_exts[i].extensionName) == 0) {
 				use_extensions.push_back(ask_extensions[ask]);
@@ -283,152 +339,145 @@ bool openxr_init(const char *app_name, int64_t swapchain_format) {
 			}
 		}
 	}
-	// If a required extension isn't present, you want to ditch out here!
-	// It's possible something like your rendering API might not be provided
-	// by the active runtime. APIs like OpenGL don't have universal support.
-	if (!std::any_of( use_extensions.begin(), use_extensions.end(), 
-		[] (const char *ext) {
-			return strcmp(ext, XR_KHR_D3D11_ENABLE_EXTENSION_NAME)==0;
-		}))
-		return false;
 
-	// Initialize OpenXR with the extensions we've found!
+	// Ensure the OpenGL extension is available
+	if (!std::any_of(use_extensions.begin(), use_extensions.end(),
+		[](const char* ext) {
+			return strcmp(ext, XR_KHR_OPENGL_ENABLE_EXTENSION_NAME) == 0;
+		})) {
+		MessageBox(nullptr, _T("XR_KHR_opengl_enable not available"), _T("Error"), MB_OK);
+		return false;
+	}
+
+	// Create the OpenXR instance
 	XrInstanceCreateInfo createInfo = { XR_TYPE_INSTANCE_CREATE_INFO };
-	createInfo.enabledExtensionCount      = use_extensions.size();
-	createInfo.enabledExtensionNames      = use_extensions.data();
+	createInfo.enabledExtensionCount = (uint32_t)use_extensions.size();
+	createInfo.enabledExtensionNames = use_extensions.data();
 	createInfo.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
 	strcpy_s(createInfo.applicationInfo.applicationName, app_name);
-	xrCreateInstance(&createInfo, &xr_instance);
 
-	// Check if OpenXR is on this system, if this is null here, the user 
-	// needs to install an OpenXR runtime and ensure it's active!
-	if (xr_instance == nullptr)
+	XrResult res = xrCreateInstance(&createInfo, &xr_instance);
+	if (XR_FAILED(res) || xr_instance == nullptr) {
+		MessageBox(nullptr, _T("Failed to create XR instance\n"), _T("Error"), MB_OK);
 		return false;
+	}
 
-	// Load extension methods that we'll need for this application! There's a
-	// couple ways to do this, and this is a fairly manual one. Chek out this
-	// file for another way to do it:
-	// https://github.com/maluoi/StereoKit/blob/master/StereoKitC/systems/platform/openxr_extensions.h
-	xrGetInstanceProcAddr(xr_instance, "xrCreateDebugUtilsMessengerEXT",    (PFN_xrVoidFunction *)(&ext_xrCreateDebugUtilsMessengerEXT   ));
-	xrGetInstanceProcAddr(xr_instance, "xrDestroyDebugUtilsMessengerEXT",   (PFN_xrVoidFunction *)(&ext_xrDestroyDebugUtilsMessengerEXT  ));
-	xrGetInstanceProcAddr(xr_instance, "xrGetD3D11GraphicsRequirementsKHR", (PFN_xrVoidFunction *)(&ext_xrGetD3D11GraphicsRequirementsKHR));
+	// Load required extension functions
+	xrGetInstanceProcAddr(xr_instance, "xrCreateDebugUtilsMessengerEXT", (PFN_xrVoidFunction*)(&ext_xrCreateDebugUtilsMessengerEXT));
+	xrGetInstanceProcAddr(xr_instance, "xrDestroyDebugUtilsMessengerEXT", (PFN_xrVoidFunction*)(&ext_xrDestroyDebugUtilsMessengerEXT));
+	xrGetInstanceProcAddr(xr_instance, "xrGetOpenGLGraphicsRequirementsKHR", (PFN_xrVoidFunction*)(&ext_xrGetOpenGLGraphicsRequirementsKHR));
 
-	// Set up a really verbose debug log! Great for dev, but turn this off or
-	// down for final builds. WMR doesn't produce much output here, but it
-	// may be more useful for other runtimes?
-	// Here's some extra information about the message types and severities:
-	// https://www.khronos.org/registry/OpenXR/specs/1.0/html/xrspec.html#debug-message-categorization
+	// Set up verbose debug logging
 	XrDebugUtilsMessengerCreateInfoEXT debug_info = { XR_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT };
 	debug_info.messageTypes =
-		XR_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT     |
-		XR_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT  |
+		XR_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+		XR_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
 		XR_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
 		XR_DEBUG_UTILS_MESSAGE_TYPE_CONFORMANCE_BIT_EXT;
 	debug_info.messageSeverities =
 		XR_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-		XR_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT    |
+		XR_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
 		XR_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
 		XR_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-	debug_info.userCallback = [](XrDebugUtilsMessageSeverityFlagsEXT severity, XrDebugUtilsMessageTypeFlagsEXT types, const XrDebugUtilsMessengerCallbackDataEXT *msg, void* user_data) {
-		// Print the debug message we got! There's a bunch more info we could
-		// add here too, but this is a pretty good start, and you can always
-		// add a breakpoint this line!
+	debug_info.userCallback = [](XrDebugUtilsMessageSeverityFlagsEXT severity, XrDebugUtilsMessageTypeFlagsEXT types, const XrDebugUtilsMessengerCallbackDataEXT* msg, void* user_data) {
 		printf("%s: %s\n", msg->functionName, msg->message);
-
-		// Output to debug window
 		char text[512];
 		sprintf_s(text, "%s: %s", msg->functionName, msg->message);
 		OutputDebugStringA(text);
-
-		// Returning XR_TRUE here will force the calling function to fail
 		return (XrBool32)XR_FALSE;
-	};
-	// Start up the debug utils!
+		};
+
 	if (ext_xrCreateDebugUtilsMessengerEXT)
 		ext_xrCreateDebugUtilsMessengerEXT(xr_instance, &debug_info, &xr_debug);
-	
-	// Request a form factor from the device (HMD, Handheld, etc.)
+
+	// Get the system (device) for the desired form factor
 	XrSystemGetInfo systemInfo = { XR_TYPE_SYSTEM_GET_INFO };
 	systemInfo.formFactor = app_config_form;
-	xrGetSystem(xr_instance, &systemInfo, &xr_system_id);
+	res = xrGetSystem(xr_instance, &systemInfo, &xr_system_id);
+	if (XR_FAILED(res)) {
+		MessageBox(nullptr, _T("Failed to get XR system\n"), _T("Error"), MB_OK);
+		return false;
+	}
 
-	// Check what blend mode is valid for this device (opaque vs transparent displays)
-	// We'll just take the first one available!
+	// Get a valid blend mode
 	uint32_t blend_count = 0;
 	xrEnumerateEnvironmentBlendModes(xr_instance, xr_system_id, app_config_view, 1, &blend_count, &xr_blend);
 
-	// OpenXR wants to ensure apps are using the correct graphics card, so this MUST be called 
-	// before xrCreateSession. This is crucial on devices that have multiple graphics cards, 
-	// like laptops with integrated graphics chips in addition to dedicated graphics cards.
-	XrGraphicsRequirementsD3D11KHR requirement = { XR_TYPE_GRAPHICS_REQUIREMENTS_D3D11_KHR };
-	ext_xrGetD3D11GraphicsRequirementsKHR(xr_instance, xr_system_id, &requirement);
-	if (!d3d_init(requirement.adapterLuid))
+	// Retrieve the OpenGL graphics requirements
+	XrGraphicsRequirementsOpenGLKHR requirement = { XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_KHR };
+	res = ext_xrGetOpenGLGraphicsRequirementsKHR(xr_instance, xr_system_id, &requirement);
+	if (XR_FAILED(res)) {
+		MessageBox(nullptr, _T("Failed to get OpenGL graphics requirements\n"), _T("Error"), MB_OK);
 		return false;
+	}
 
-	// A session represents this application's desire to display things! This is where we hook up our graphics API.
-	// This does not start the session, for that, you'll need a call to xrBeginSession, which we do in openxr_poll_events
-	XrGraphicsBindingD3D11KHR binding = { XR_TYPE_GRAPHICS_BINDING_D3D11_KHR };
-	binding.device = d3d_device;
+	// Ensure we have a current OpenGL context here
+	if (!wglGetCurrentContext()) {
+		MessageBox(nullptr, _T("No current OpenGL context found\n"), _T("Error"), MB_OK);
+		return false;
+	}
+
+	// Create the session with the OpenGL context
+	XrGraphicsBindingOpenGLWin32KHR graphicsBinding = { XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR };
+	graphicsBinding.hDC = wglGetCurrentDC();
+	graphicsBinding.hGLRC = wglGetCurrentContext();
+
 	XrSessionCreateInfo sessionInfo = { XR_TYPE_SESSION_CREATE_INFO };
-	sessionInfo.next     = &binding;
+	sessionInfo.next = &graphicsBinding;
 	sessionInfo.systemId = xr_system_id;
-	xrCreateSession(xr_instance, &sessionInfo, &xr_session);
 
-	// Unable to start a session, may not have an MR device attached or ready
-	if (xr_session == nullptr)
+	res = xrCreateSession(xr_instance, &sessionInfo, &xr_session);
+	if (XR_FAILED(res) || xr_session == XR_NULL_HANDLE) {
+		MessageBox(nullptr, _T("Failed to create OpenXR session\n"), _T("Error"), MB_OK);
 		return false;
+	}
 
-	// OpenXR uses a couple different types of reference frames for positioning content, we need to choose one for
-	// displaying our content! STAGE would be relative to the center of your guardian system's bounds, and LOCAL
-	// would be relative to your device's starting location. HoloLens doesn't have a STAGE, so we'll use LOCAL.
+	// Create a reference space
 	XrReferenceSpaceCreateInfo ref_space = { XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
 	ref_space.poseInReferenceSpace = xr_pose_identity;
-	ref_space.referenceSpaceType   = XR_REFERENCE_SPACE_TYPE_LOCAL;
+	ref_space.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
 	xrCreateReferenceSpace(xr_session, &ref_space, &xr_app_space);
 
-	// Now we need to find all the viewpoints we need to take care of! For a stereo headset, this should be 2.
-	// Similarly, for an AR phone, we'll need 1, and a VR cave could have 6, or even 12!
+	// Query view configuration
 	uint32_t view_count = 0;
 	xrEnumerateViewConfigurationViews(xr_instance, xr_system_id, app_config_view, 0, &view_count, nullptr);
 	xr_config_views.resize(view_count, { XR_TYPE_VIEW_CONFIGURATION_VIEW });
-	xr_views       .resize(view_count, { XR_TYPE_VIEW });
+	xr_views.resize(view_count, { XR_TYPE_VIEW });
 	xrEnumerateViewConfigurationViews(xr_instance, xr_system_id, app_config_view, view_count, &view_count, xr_config_views.data());
-	for (uint32_t i = 0; i < view_count; i++) {
-		// Create a swapchain for this viewpoint! A swapchain is a set of texture buffers used for displaying to screen,
-		// typically this is a backbuffer and a front buffer, one for rendering data to, and one for displaying on-screen.
-		// A note about swapchain image format here! OpenXR doesn't create a concrete image format for the texture, like 
-		// DXGI_FORMAT_R8G8B8A8_UNORM. Instead, it switches to the TYPELESS variant of the provided texture format, like 
-		// DXGI_FORMAT_R8G8B8A8_TYPELESS. When creating an ID3D11RenderTargetView for the swapchain texture, we must specify
-		// a concrete type like DXGI_FORMAT_R8G8B8A8_UNORM, as attempting to create a TYPELESS view will throw errors, so 
-		// we do need to store the format separately and remember it later.
-		XrViewConfigurationView &view           = xr_config_views[i];
-		XrSwapchainCreateInfo    swapchain_info = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
-		XrSwapchain              handle;
-		swapchain_info.arraySize   = 1;
-		swapchain_info.mipCount    = 1;
-		swapchain_info.faceCount   = 1;
-		swapchain_info.format      = swapchain_format;
-		swapchain_info.width       = view.recommendedImageRectWidth;
-		swapchain_info.height      = view.recommendedImageRectHeight;
-		swapchain_info.sampleCount = view.recommendedSwapchainSampleCount;
-		swapchain_info.usageFlags  = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
-		xrCreateSwapchain(xr_session, &swapchain_info, &handle);
 
-		// Find out how many textures were generated for the swapchain
+	// Create OpenGL swapchains for each view
+	for (uint32_t i = 0; i < view_count; i++) {
+		XrViewConfigurationView& view = xr_config_views[i];
+		XrSwapchainCreateInfo swapchain_info = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
+		XrSwapchain handle;
+		swapchain_info.arraySize = 1;
+		swapchain_info.mipCount = 1;
+		swapchain_info.faceCount = 1;
+		swapchain_info.format = swapchain_format;
+		swapchain_info.width = view.recommendedImageRectWidth;
+		swapchain_info.height = view.recommendedImageRectHeight;
+		swapchain_info.sampleCount = view.recommendedSwapchainSampleCount;
+		swapchain_info.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+
+		res = xrCreateSwapchain(xr_session, &swapchain_info, &handle);
+		if (XR_FAILED(res)) {
+			MessageBox(nullptr, _T("Failed to create OpenXR swapchain\n"), _T("Error"), MB_OK);
+			return false;
+		}
+
 		uint32_t surface_count = 0;
 		xrEnumerateSwapchainImages(handle, 0, &surface_count, nullptr);
 
-		// We'll want to track our own information about the swapchain, so we can draw stuff onto it! We'll also create
-		// a depth buffer for each generated texture here as well with make_surfacedata.
 		swapchain_t swapchain = {};
-		swapchain.width  = swapchain_info.width;
+		swapchain.width = swapchain_info.width;
 		swapchain.height = swapchain_info.height;
 		swapchain.handle = handle;
-		swapchain.surface_images.resize(surface_count, { XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR } );
-		swapchain.surface_data  .resize(surface_count);
+		swapchain.surface_images.resize(surface_count, { XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR });
+		swapchain.surface_data.resize(surface_count);
+
 		xrEnumerateSwapchainImages(swapchain.handle, surface_count, &surface_count, (XrSwapchainImageBaseHeader*)swapchain.surface_images.data());
-		for (uint32_t i = 0; i < surface_count; i++) {
-			swapchain.surface_data[i] = d3d_make_surface_data((XrBaseInStructure&)swapchain.surface_images[i]);
+		for (uint32_t img_i = 0; img_i < surface_count; img_i++) {
+			swapchain.surface_data[img_i] = gl_make_surface_data((XrBaseInStructure&)swapchain.surface_images[img_i], swapchain.width, swapchain.height);
 		}
 		xr_swapchains.push_back(swapchain);
 	}
@@ -436,30 +485,31 @@ bool openxr_init(const char *app_name, int64_t swapchain_format) {
 	return true;
 }
 
+
 ///////////////////////////////////////////
 
 void openxr_make_actions() {
 	XrActionSetCreateInfo actionset_info = { XR_TYPE_ACTION_SET_CREATE_INFO };
-	strcpy_s(actionset_info.actionSetName,          "gameplay");
+	strcpy_s(actionset_info.actionSetName, "gameplay");
 	strcpy_s(actionset_info.localizedActionSetName, "Gameplay");
 	xrCreateActionSet(xr_instance, &actionset_info, &xr_input.actionSet);
-	xrStringToPath(xr_instance, "/user/hand/left",  &xr_input.handSubactionPath[0]);
+	xrStringToPath(xr_instance, "/user/hand/left", &xr_input.handSubactionPath[0]);
 	xrStringToPath(xr_instance, "/user/hand/right", &xr_input.handSubactionPath[1]);
 
 	// Create an action to track the position and orientation of the hands! This is
 	// the controller location, or the center of the palms for actual hands.
 	XrActionCreateInfo action_info = { XR_TYPE_ACTION_CREATE_INFO };
 	action_info.countSubactionPaths = _countof(xr_input.handSubactionPath);
-	action_info.subactionPaths      = xr_input.handSubactionPath;
-	action_info.actionType          = XR_ACTION_TYPE_POSE_INPUT;
-	strcpy_s(action_info.actionName,          "hand_pose");
+	action_info.subactionPaths = xr_input.handSubactionPath;
+	action_info.actionType = XR_ACTION_TYPE_POSE_INPUT;
+	strcpy_s(action_info.actionName, "hand_pose");
 	strcpy_s(action_info.localizedActionName, "Hand Pose");
 	xrCreateAction(xr_input.actionSet, &action_info, &xr_input.poseAction);
 
 	// Create an action for listening to the select action! This is primary trigger
 	// on controllers, and an airtap on HoloLens
 	action_info.actionType = XR_ACTION_TYPE_BOOLEAN_INPUT;
-	strcpy_s(action_info.actionName,          "select");
+	strcpy_s(action_info.actionName, "select");
 	strcpy_s(action_info.localizedActionName, "Select");
 	xrCreateAction(xr_input.actionSet, &action_info, &xr_input.selectAction);
 
@@ -468,11 +518,11 @@ void openxr_make_actions() {
 	// preferences. For example, if the runtime allows you to remap buttons, or provides input
 	// accessibility settings.
 	XrPath profile_path;
-	XrPath pose_path  [2];
+	XrPath pose_path[2];
 	XrPath select_path[2];
-	xrStringToPath(xr_instance, "/user/hand/left/input/grip/pose",     &pose_path[0]);
-	xrStringToPath(xr_instance, "/user/hand/right/input/grip/pose",    &pose_path[1]);
-	xrStringToPath(xr_instance, "/user/hand/left/input/select/click",  &select_path[0]);
+	xrStringToPath(xr_instance, "/user/hand/left/input/grip/pose", &pose_path[0]);
+	xrStringToPath(xr_instance, "/user/hand/right/input/grip/pose", &pose_path[1]);
+	xrStringToPath(xr_instance, "/user/hand/left/input/select/click", &select_path[0]);
 	xrStringToPath(xr_instance, "/user/hand/right/input/select/click", &select_path[1]);
 	xrStringToPath(xr_instance, "/interaction_profiles/khr/simple_controller", &profile_path);
 	XrActionSuggestedBinding bindings[] = {
@@ -481,24 +531,24 @@ void openxr_make_actions() {
 		{ xr_input.selectAction, select_path[0] },
 		{ xr_input.selectAction, select_path[1] }, };
 	XrInteractionProfileSuggestedBinding suggested_binds = { XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING };
-	suggested_binds.interactionProfile     = profile_path;
-	suggested_binds.suggestedBindings      = &bindings[0];
+	suggested_binds.interactionProfile = profile_path;
+	suggested_binds.suggestedBindings = &bindings[0];
 	suggested_binds.countSuggestedBindings = _countof(bindings);
 	xrSuggestInteractionProfileBindings(xr_instance, &suggested_binds);
 
 	// Create frames of reference for the pose actions
 	for (int32_t i = 0; i < 2; i++) {
 		XrActionSpaceCreateInfo action_space_info = { XR_TYPE_ACTION_SPACE_CREATE_INFO };
-		action_space_info.action            = xr_input.poseAction;
+		action_space_info.action = xr_input.poseAction;
 		action_space_info.poseInActionSpace = xr_pose_identity;
-		action_space_info.subactionPath     = xr_input.handSubactionPath[i];
+		action_space_info.subactionPath = xr_input.handSubactionPath[i];
 		xrCreateActionSpace(xr_session, &action_space_info, &xr_input.handSpace[i]);
 	}
 
 	// Attach the action set we just made to the session
 	XrSessionActionSetsAttachInfo attach_info = { XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO };
 	attach_info.countActionSets = 1;
-	attach_info.actionSets      = &xr_input.actionSet;
+	attach_info.actionSets = &xr_input.actionSet;
 	xrAttachSessionActionSets(xr_session, &attach_info);
 }
 
@@ -509,7 +559,7 @@ void openxr_shutdown() {
 	// give it a chance to release anythig here!
 	for (int32_t i = 0; i < xr_swapchains.size(); i++) {
 		xrDestroySwapchain(xr_swapchains[i].handle);
-		d3d_swapchain_destroy(xr_swapchains[i]);
+		gl_swapchain_destroy(xr_swapchains[i]);
 	}
 	xr_swapchains.clear();
 
@@ -520,15 +570,19 @@ void openxr_shutdown() {
 		if (xr_input.handSpace[1] != XR_NULL_HANDLE) xrDestroySpace(xr_input.handSpace[1]);
 		xrDestroyActionSet(xr_input.actionSet);
 	}
-	if (xr_app_space != XR_NULL_HANDLE) xrDestroySpace   (xr_app_space);
-	if (xr_session   != XR_NULL_HANDLE) xrDestroySession (xr_session);
-	if (xr_debug     != XR_NULL_HANDLE) ext_xrDestroyDebugUtilsMessengerEXT(xr_debug);
-	if (xr_instance  != XR_NULL_HANDLE) xrDestroyInstance(xr_instance);
+	if (xr_app_space != XR_NULL_HANDLE) xrDestroySpace(xr_app_space);
+	if (xr_session != XR_NULL_HANDLE) xrDestroySession(xr_session);
+	if (xr_debug != XR_NULL_HANDLE) ext_xrDestroyDebugUtilsMessengerEXT(xr_debug);
+	if (xr_instance != XR_NULL_HANDLE) xrDestroyInstance(xr_instance);
+}
+
+void opengl_shutdown() {
+	glfwTerminate();
 }
 
 ///////////////////////////////////////////
 
-void openxr_poll_events(bool &exit) {
+void openxr_poll_events(bool& exit) {
 	exit = false;
 
 	XrEventDataBuffer event_buffer = { XR_TYPE_EVENT_DATA_BUFFER };
@@ -536,7 +590,7 @@ void openxr_poll_events(bool &exit) {
 	while (xrPollEvent(xr_instance, &event_buffer) == XR_SUCCESS) {
 		switch (event_buffer.type) {
 		case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED: {
-			XrEventDataSessionStateChanged *changed = (XrEventDataSessionStateChanged*)&event_buffer;
+			XrEventDataSessionStateChanged* changed = (XrEventDataSessionStateChanged*)&event_buffer;
 			xr_session_state = changed->state;
 
 			// Session state change is where we can begin and end sessions, as well as find quit messages!
@@ -549,7 +603,7 @@ void openxr_poll_events(bool &exit) {
 			} break;
 			case XR_SESSION_STATE_STOPPING: {
 				xr_running = false;
-				xrEndSession(xr_session); 
+				xrEndSession(xr_session);
 			} break;
 			case XR_SESSION_STATE_EXITING:      exit = true;              break;
 			case XR_SESSION_STATE_LOSS_PENDING: exit = true;              break;
@@ -569,12 +623,12 @@ void openxr_poll_actions() {
 
 	// Update our action set with up-to-date input data!
 	XrActiveActionSet action_set = { };
-	action_set.actionSet     = xr_input.actionSet;
+	action_set.actionSet = xr_input.actionSet;
 	action_set.subactionPath = XR_NULL_PATH;
 
 	XrActionsSyncInfo sync_info = { XR_TYPE_ACTIONS_SYNC_INFO };
 	sync_info.countActiveActionSets = 1;
-	sync_info.activeActionSets      = &action_set;
+	sync_info.activeActionSets = &action_set;
 
 	xrSyncActions(xr_session, &sync_info);
 
@@ -597,9 +651,9 @@ void openxr_poll_actions() {
 		// If we have a select event, update the hand pose to match the event's timestamp
 		if (xr_input.handSelect[hand]) {
 			XrSpaceLocation space_location = { XR_TYPE_SPACE_LOCATION };
-			XrResult        res            = xrLocateSpace(xr_input.handSpace[hand], xr_app_space, select_state.lastChangeTime, &space_location);
+			XrResult        res = xrLocateSpace(xr_input.handSpace[hand], xr_app_space, select_state.lastChangeTime, &space_location);
 			if (XR_UNQUALIFIED_SUCCESS(res) &&
-				(space_location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT   ) != 0 &&
+				(space_location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
 				(space_location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) != 0) {
 				xr_input.handPose[hand] = space_location.pose;
 			}
@@ -619,9 +673,9 @@ void openxr_poll_predicted(XrTime predicted_time) {
 		if (!xr_input.renderHand[i])
 			continue;
 		XrSpaceLocation spaceRelation = { XR_TYPE_SPACE_LOCATION };
-		XrResult        res           = xrLocateSpace(xr_input.handSpace[i], xr_app_space, predicted_time, &spaceRelation);
+		XrResult        res = xrLocateSpace(xr_input.handSpace[i], xr_app_space, predicted_time, &spaceRelation);
 		if (XR_UNQUALIFIED_SUCCESS(res) &&
-			(spaceRelation.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT   ) != 0 &&
+			(spaceRelation.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) != 0 &&
 			(spaceRelation.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) != 0) {
 			xr_input.handPose[i] = spaceRelation.pose;
 		}
@@ -635,7 +689,7 @@ void openxr_render_frame() {
 	// Also returns a prediction of when the next frame will be displayed, for use with predicting
 	// locations of controllers, viewpoints, etc.
 	XrFrameState frame_state = { XR_TYPE_FRAME_STATE };
-	xrWaitFrame (xr_session, nullptr, &frame_state);
+	xrWaitFrame(xr_session, nullptr, &frame_state);
 	// Must be called before any rendering is done! This can return some interesting flags, like 
 	// XR_SESSION_VISIBILITY_UNAVAILABLE, which means we could skip rendering this frame and call
 	// xrEndFrame right away.
@@ -647,7 +701,7 @@ void openxr_render_frame() {
 	app_update_predicted();
 
 	// If the session is active, lets render our layer in the compositor!
-	XrCompositionLayerBaseHeader            *layer      = nullptr;
+	XrCompositionLayerBaseHeader* layer = nullptr;
 	XrCompositionLayerProjection             layer_proj = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
 	vector<XrCompositionLayerProjectionView> views;
 	bool session_active = xr_session_state == XR_SESSION_STATE_VISIBLE || xr_session_state == XR_SESSION_STATE_FOCUSED;
@@ -657,24 +711,24 @@ void openxr_render_frame() {
 
 	// We're finished with rendering our layer, so send it off for display!
 	XrFrameEndInfo end_info{ XR_TYPE_FRAME_END_INFO };
-	end_info.displayTime          = frame_state.predictedDisplayTime;
+	end_info.displayTime = frame_state.predictedDisplayTime;
 	end_info.environmentBlendMode = xr_blend;
-	end_info.layerCount           = layer == nullptr ? 0 : 1;
-	end_info.layers               = &layer;
+	end_info.layerCount = layer == nullptr ? 0 : 1;
+	end_info.layers = &layer;
 	xrEndFrame(xr_session, &end_info);
 }
 
 ///////////////////////////////////////////
 
-bool openxr_render_layer(XrTime predictedTime, vector<XrCompositionLayerProjectionView> &views, XrCompositionLayerProjection &layer) {
-	
+bool openxr_render_layer(XrTime predictedTime, vector<XrCompositionLayerProjectionView>& views, XrCompositionLayerProjection& layer) {
+
 	// Find the state and location of each viewpoint at the predicted time
-	uint32_t         view_count  = 0;
-	XrViewState      view_state  = { XR_TYPE_VIEW_STATE };
+	uint32_t         view_count = 0;
+	XrViewState      view_state = { XR_TYPE_VIEW_STATE };
 	XrViewLocateInfo locate_info = { XR_TYPE_VIEW_LOCATE_INFO };
 	locate_info.viewConfigurationType = app_config_view;
-	locate_info.displayTime           = predictedTime;
-	locate_info.space                 = xr_app_space;
+	locate_info.displayTime = predictedTime;
+	locate_info.space = xr_app_space;
 	xrLocateViews(xr_session, &locate_info, &view_state, (uint32_t)xr_views.size(), &view_count, xr_views.data());
 	views.resize(view_count);
 
@@ -696,185 +750,122 @@ bool openxr_render_layer(XrTime predictedTime, vector<XrCompositionLayerProjecti
 		// Set up our rendering information for the viewpoint we're using right now!
 		views[i] = { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW };
 		views[i].pose = xr_views[i].pose;
-		views[i].fov  = xr_views[i].fov;
-		views[i].subImage.swapchain        = xr_swapchains[i].handle;
+		views[i].fov = xr_views[i].fov;
+		views[i].subImage.swapchain = xr_swapchains[i].handle;
 		views[i].subImage.imageRect.offset = { 0, 0 };
 		views[i].subImage.imageRect.extent = { xr_swapchains[i].width, xr_swapchains[i].height };
 
 		// Call the rendering callback with our view and swapchain info
-		d3d_render_layer(views[i], xr_swapchains[i].surface_data[img_id]);
+		gl_render_layer(views[i], xr_swapchains[i].surface_data[img_id]);
 
 		// And tell OpenXR we're done with rendering to this one!
 		XrSwapchainImageReleaseInfo release_info = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
 		xrReleaseSwapchainImage(xr_swapchains[i].handle, &release_info);
 	}
 
-	layer.space     = xr_app_space;
+	layer.space = xr_app_space;
 	layer.viewCount = (uint32_t)views.size();
-	layer.views     = views.data();
+	layer.views = views.data();
 	return true;
 }
 
 ///////////////////////////////////////////
-// DirectX code                          //
+// OpenGL code                          //
 ///////////////////////////////////////////
 
-bool d3d_init(LUID &adapter_luid) {
-	IDXGIAdapter1    *adapter         = d3d_get_adapter(adapter_luid);
-	D3D_FEATURE_LEVEL featureLevels[] = { D3D_FEATURE_LEVEL_11_0 };
+// Compile a GLSL shader and return its ID
+GLuint gl_compile_shader(GLenum type, const char* source) {
+	GLuint shader = glCreateShader(type);
+	glShaderSource(shader, 1, &source, nullptr);
+	glCompileShader(shader);
 
-	if (adapter == nullptr)
-		return false;
-	if (FAILED(D3D11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, 0, 0, featureLevels, _countof(featureLevels), D3D11_SDK_VERSION, &d3d_device, nullptr, &d3d_context)))
-		return false;
-
-	adapter->Release();
-	return true;
-}
-
-///////////////////////////////////////////
-
-IDXGIAdapter1 *d3d_get_adapter(LUID &adapter_luid) {
-	// Turn the LUID into a specific graphics device adapter
-	IDXGIAdapter1 *final_adapter = nullptr;
-	IDXGIAdapter1 *curr_adapter  = nullptr;
-	IDXGIFactory1 *dxgi_factory;
-	DXGI_ADAPTER_DESC1 adapter_desc;
-
-	CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void **)(&dxgi_factory));
-
-	int curr = 0;
-	while (dxgi_factory->EnumAdapters1(curr++, &curr_adapter) == S_OK) {
-		curr_adapter->GetDesc1(&adapter_desc);
-
-		if (memcmp(&adapter_desc.AdapterLuid, &adapter_luid, sizeof(&adapter_luid)) == 0) {
-			final_adapter = curr_adapter;
-			break;
-		}
-		curr_adapter->Release();
-		curr_adapter = nullptr;
+	GLint success = 0;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+	if (!success) {
+		char log[512];
+		glGetShaderInfoLog(shader, 512, NULL, log);
+		printf("Shader compile error: %s\n", log);
 	}
-	dxgi_factory->Release();
-	return final_adapter;
+	return shader;
 }
 
-///////////////////////////////////////////
+// Link vertex and fragment shader into a program
+GLuint gl_create_program(const char* vs_src, const char* fs_src) {
+	GLuint vs = gl_compile_shader(GL_VERTEX_SHADER, vs_src);
+	GLuint fs = gl_compile_shader(GL_FRAGMENT_SHADER, fs_src);
 
-void d3d_shutdown() {
-	if (d3d_context) { d3d_context->Release(); d3d_context = nullptr; }
-	if (d3d_device ) { d3d_device->Release();  d3d_device  = nullptr; }
-}
+	GLuint prog = glCreateProgram();
+	glAttachShader(prog, vs);
+	glAttachShader(prog, fs);
+	glLinkProgram(prog);
 
-///////////////////////////////////////////
+	glDeleteShader(vs);
+	glDeleteShader(fs);
 
-swapchain_surfdata_t d3d_make_surface_data(XrBaseInStructure &swapchain_img) {
-	swapchain_surfdata_t result = {};
-
-	// Get information about the swapchain image that OpenXR made for us!
-	XrSwapchainImageD3D11KHR &d3d_swapchain_img = (XrSwapchainImageD3D11KHR &)swapchain_img;
-	D3D11_TEXTURE2D_DESC      color_desc;
-	d3d_swapchain_img.texture->GetDesc(&color_desc);
-
-	// Create a view resource for the swapchain image target that we can use to set up rendering.
-	D3D11_RENDER_TARGET_VIEW_DESC target_desc = {};
-	target_desc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-	// NOTE: Why not use color_desc.Format? Check the notes over near the xrCreateSwapchain call!
-	// Basically, the color_desc.Format of the OpenXR created swapchain is TYPELESS, but in order to
-	// create a View for the texture, we need a concrete variant of the texture format like UNORM.
-	target_desc.Format        = (DXGI_FORMAT)d3d_swapchain_fmt; 
-	d3d_device->CreateRenderTargetView(d3d_swapchain_img.texture, &target_desc, &result.target_view);
-
-	// Create a depth buffer that matches 
-	ID3D11Texture2D     *depth_texture;
-	D3D11_TEXTURE2D_DESC depth_desc = {};
-	depth_desc.SampleDesc.Count = 1;
-	depth_desc.MipLevels        = 1;
-	depth_desc.Width            = color_desc.Width;
-	depth_desc.Height           = color_desc.Height;
-	depth_desc.ArraySize        = color_desc.ArraySize;
-	depth_desc.Format           = DXGI_FORMAT_R32_TYPELESS;
-	depth_desc.BindFlags        = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_DEPTH_STENCIL;
-	d3d_device->CreateTexture2D(&depth_desc, nullptr, &depth_texture);
-
-	// And create a view resource for the depth buffer, so we can set that up for rendering to as well!
-	D3D11_DEPTH_STENCIL_VIEW_DESC stencil_desc = {};
-	stencil_desc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
-	stencil_desc.Format        = DXGI_FORMAT_D32_FLOAT;
-	d3d_device->CreateDepthStencilView(depth_texture, &stencil_desc, &result.depth_view);
-
-	// We don't need direct access to the ID3D11Texture2D object anymore, we only need the view
-	depth_texture->Release();
-
-	return result;
-}
-
-///////////////////////////////////////////
-
-void d3d_render_layer(XrCompositionLayerProjectionView &view, swapchain_surfdata_t &surface) {
-	// Set up where on the render target we want to draw, the view has a 
-	XrRect2Di     &rect     = view.subImage.imageRect;
-	D3D11_VIEWPORT viewport = CD3D11_VIEWPORT((float)rect.offset.x, (float)rect.offset.y, (float)rect.extent.width, (float)rect.extent.height);
-	d3d_context->RSSetViewports(1, &viewport);
-
-	// Wipe our swapchain color and depth target clean, and then set them up for rendering!
-	float clear[] = { 0, 0, 0, 1 };
-	d3d_context->ClearRenderTargetView(surface.target_view, clear);
-	d3d_context->ClearDepthStencilView(surface.depth_view, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
-	d3d_context->OMSetRenderTargets(1, &surface.target_view, surface.depth_view);
-
-	// And now that we're set up, pass on the rest of our rendering to the application
-	app_draw(view);
-}
-
-///////////////////////////////////////////
-
-void d3d_swapchain_destroy(swapchain_t &swapchain) {
-	for (uint32_t i = 0; i < swapchain.surface_data.size(); i++) {
-		swapchain.surface_data[i].depth_view ->Release();
-		swapchain.surface_data[i].target_view->Release();
+	GLint success = 0;
+	glGetProgramiv(prog, GL_LINK_STATUS, &success);
+	if (!success) {
+		char log[512];
+		glGetProgramInfoLog(prog, 512, NULL, log);
+		printf("Program link error: %s\n", log);
 	}
+
+	return prog;
 }
 
-///////////////////////////////////////////
-
-XMMATRIX d3d_xr_projection(XrFovf fov, float clip_near, float clip_far) {
+// Convert from XrFovf to a projection matrix using glm
+glm::mat4 gl_xr_projection(XrFovf fov, float clip_near, float clip_far) {
 	float left = clip_near * tanf(fov.angleLeft);
 	float right = clip_near * tanf(fov.angleRight);
 	float down = clip_near * tanf(fov.angleDown);
 	float up = clip_near * tanf(fov.angleUp);
 
-	// Make sure the near and far planes are not flipped and are correct to avoid assert(!XMScalarNearEqual(ViewRight, ViewLeft, 0.00001f));
-	float epsilon = 0.0001f;
-	if (fabsf(right - left) < epsilon || fabsf(up - down) < epsilon) {
-        //return XMMatrixPerspectiveOffCenterRH(left, right, down, up, clip_near, clip_far);
-		float defaultFov = XM_PI / 3.0f;
-		float defaultHalfWidth = clip_near * tanf(defaultFov * 0.5f);
-		left = -defaultHalfWidth;
-		right = defaultHalfWidth;
-		down = -defaultHalfWidth;
-		up = defaultHalfWidth;
-	}
-
-	return XMMatrixPerspectiveOffCenterRH(left, right, down, up, clip_near, clip_far);
+	// Construct an off-center projection matrix
+	return glm::frustum(left, right, down, up, clip_near, clip_far);
 }
 
+swapchain_surfdata_t gl_make_surface_data(XrBaseInStructure& swapchain_img, int32_t width, int32_t height) {
+	swapchain_surfdata_t result = {};
 
-///////////////////////////////////////////
+	// Cast to the OpenGL swapchain image type
+	XrSwapchainImageOpenGLKHR& gl_swapchain_img = (XrSwapchainImageOpenGLKHR&)swapchain_img;
+	GLuint colorTexture = gl_swapchain_img.image;
 
-ID3DBlob *d3d_compile_shader(const char* hlsl, const char* entrypoint, const char* target) {
-	DWORD flags = D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR | D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_WARNINGS_ARE_ERRORS;
-#ifdef _DEBUG
-	flags |= D3DCOMPILE_SKIP_OPTIMIZATION | D3DCOMPILE_DEBUG;
-#else
-	flags |= D3DCOMPILE_OPTIMIZATION_LEVEL3;
-#endif
+	// Create an FBO and attach the colorTexture and a depth buffer
+	glGenFramebuffers(1, &result.fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, result.fbo);
 
-	ID3DBlob *compiled, *errors;
-	if (FAILED(D3DCompile(hlsl, strlen(hlsl), nullptr, nullptr, nullptr, entrypoint, target, flags, 0, &compiled, &errors)))
-		printf("Error: D3DCompile failed %s", (char*)errors->GetBufferPointer());
-	if (errors) errors->Release();
+	glGenRenderbuffers(1, &result.depthbuffer);
+	glBindRenderbuffer(GL_RENDERBUFFER, result.depthbuffer);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, result.depthbuffer);
 
-	return compiled;
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
+
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		printf("Failed to create framebuffer for swapchain image\n");
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	return result;
+}
+
+void gl_render_layer(XrCompositionLayerProjectionView& view, swapchain_surfdata_t& surface) {
+	glBindFramebuffer(GL_FRAMEBUFFER, surface.fbo);
+	glViewport(view.subImage.imageRect.offset.x, view.subImage.imageRect.offset.y,
+		view.subImage.imageRect.extent.width, view.subImage.imageRect.extent.height);
+	glClearColor(0, 0, 0, 1);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	extern void app_draw(XrCompositionLayerProjectionView & view);
+	app_draw(view);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void gl_swapchain_destroy(swapchain_t& swapchain) {
+	for (auto& surf : swapchain.surface_data) {
+		glDeleteRenderbuffers(1, &surf.depthbuffer);
+		glDeleteFramebuffers(1, &surf.fbo);
+	}
 }
 
 ///////////////////////////////////////////
@@ -882,70 +873,76 @@ ID3DBlob *d3d_compile_shader(const char* hlsl, const char* entrypoint, const cha
 ///////////////////////////////////////////
 
 void app_init() {
-	// Compile our shader code, and turn it into a shader resource!
-	ID3DBlob *vert_shader_blob  = d3d_compile_shader(app_shader_code, "vs", "vs_5_0");
-	ID3DBlob *pixel_shader_blob = d3d_compile_shader(app_shader_code, "ps", "ps_5_0");
-	d3d_device->CreateVertexShader(vert_shader_blob->GetBufferPointer(), vert_shader_blob ->GetBufferSize(), nullptr, &app_vshader);
-	d3d_device->CreatePixelShader(pixel_shader_blob->GetBufferPointer(), pixel_shader_blob->GetBufferSize(), nullptr, &app_pshader);
+	app_shader_program = gl_create_program(vertex_glsl, fragment_glsl);
 
-	// Describe how our mesh is laid out in memory
-	D3D11_INPUT_ELEMENT_DESC vert_desc[] = {
-		{"SV_POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
-		{"NORMAL",      0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0}, };
-	d3d_device->CreateInputLayout(vert_desc, (UINT)_countof(vert_desc), vert_shader_blob->GetBufferPointer(), vert_shader_blob->GetBufferSize(), &app_shader_layout);
+	// Create VAO/VBO/EBO
+	glGenVertexArrays(1, &app_vao);
+	glGenBuffers(1, &app_vbo);
+	glGenBuffers(1, &app_ebo);
 
-	// Create GPU resources for our mesh's vertices and indices! Constant buffers are for passing transform
-	// matrices into the shaders, so make a buffer for them too!
-	D3D11_SUBRESOURCE_DATA vert_buff_data = { app_verts };
-	D3D11_SUBRESOURCE_DATA ind_buff_data  = { app_inds };
-	CD3D11_BUFFER_DESC     vert_buff_desc (sizeof(app_verts),              D3D11_BIND_VERTEX_BUFFER);
-	CD3D11_BUFFER_DESC     ind_buff_desc  (sizeof(app_inds),               D3D11_BIND_INDEX_BUFFER);
-	CD3D11_BUFFER_DESC     const_buff_desc(sizeof(app_transform_buffer_t), D3D11_BIND_CONSTANT_BUFFER);
-	d3d_device->CreateBuffer(&vert_buff_desc, &vert_buff_data, &app_vertex_buffer);
-	d3d_device->CreateBuffer(&ind_buff_desc,  &ind_buff_data,  &app_index_buffer);
-	d3d_device->CreateBuffer(&const_buff_desc, nullptr,        &app_constant_buffer);
+	glBindVertexArray(app_vao);
+
+	glBindBuffer(GL_ARRAY_BUFFER, app_vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(app_verts), app_verts, GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, app_ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(app_inds), app_inds, GL_STATIC_DRAW);
+
+	// Position attribute
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+	// Normal attribute
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+
+	glBindVertexArray(0);
+
+	// Create a UBO for transform data
+	glGenBuffers(1, &app_uniform_buffer);
+	glBindBuffer(GL_UNIFORM_BUFFER, app_uniform_buffer);
+	glBufferData(GL_UNIFORM_BUFFER, sizeof(app_transform_buffer_t), nullptr, GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+	// The binding point 0 matches layout(binding = 0) in the shader if used,
+	// or you can use glGetUniformBlockIndex/glUniformBlockBinding to link them.
+	GLuint blockIndex = glGetUniformBlockIndex(app_shader_program, "TransformBuffer");
+	glUniformBlockBinding(app_shader_program, blockIndex, 0);
+	glBindBufferBase(GL_UNIFORM_BUFFER, 0, app_uniform_buffer);
 }
 
-///////////////////////////////////////////
+void app_draw(XrCompositionLayerProjectionView& view) {
+	// Compute view and projection matrices
+	glm::mat4 mat_projection = gl_xr_projection(view.fov, 0.05f, 100.0f);
+	glm::quat orientation(view.pose.orientation.w, view.pose.orientation.x, view.pose.orientation.y, view.pose.orientation.z);
+	glm::vec3 position(view.pose.position.x, view.pose.position.y, view.pose.position.z);
 
-void app_draw(XrCompositionLayerProjectionView &view) {
-	// Set up camera matrices based on OpenXR's predicted viewpoint information
-	XMMATRIX mat_projection = d3d_xr_projection(view.fov, 0.05f, 100.0f);
-	XMMATRIX mat_view       = XMMatrixInverse(nullptr, XMMatrixAffineTransformation(
-		DirectX::g_XMOne, DirectX::g_XMZero,
-		XMLoadFloat4((XMFLOAT4*)&view.pose.orientation),
-		XMLoadFloat3((XMFLOAT3*)&view.pose.position)));
+	glm::mat4 mat_view = glm::inverse(glm::translate(glm::mat4(1.0f), position) * glm::mat4_cast(orientation));
 
-	// Set the active shaders and constant buffers.
-	d3d_context->VSSetConstantBuffers(0, 1, &app_constant_buffer);
-	d3d_context->VSSetShader(app_vshader, nullptr, 0);
-	d3d_context->PSSetShader(app_pshader, nullptr, 0);
+	glUseProgram(app_shader_program);
 
-	// Set up the cube mesh's information
-	UINT strides[] = { sizeof(float) * 6 };
-	UINT offsets[] = { 0 };
-	d3d_context->IASetVertexBuffers    (0, 1, &app_vertex_buffer, strides, offsets);
-	d3d_context->IASetIndexBuffer      (app_index_buffer, DXGI_FORMAT_R16_UINT, 0);
-	d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	d3d_context->IASetInputLayout      (app_shader_layout);
-
-	// Put camera matrices into the shader's constant buffer
+	// Update the uniform buffer with viewproj and world
+	// We'll draw each cube individually, updating the world matrix each time.
 	app_transform_buffer_t transform_buffer;
-	XMStoreFloat4x4(&transform_buffer.viewproj, XMMatrixTranspose(mat_view * mat_projection));
+	transform_buffer.viewproj = mat_projection * mat_view;
 
-	// Draw all the cubes we have in our list!
+	glBindBuffer(GL_UNIFORM_BUFFER, app_uniform_buffer);
+
+	glBindVertexArray(app_vao);
+
 	for (size_t i = 0; i < app_cubes.size(); i++) {
-		// Create a translate, rotate, scale matrix for the cube's world location
-		XMMATRIX mat_model = XMMatrixAffineTransformation(
-			DirectX::g_XMOne * 0.05f, DirectX::g_XMZero,
-			XMLoadFloat4((XMFLOAT4*)&app_cubes[i].orientation),
-			XMLoadFloat3((XMFLOAT3*)&app_cubes[i].position));
+		glm::quat cube_orientation(app_cubes[i].orientation.w, app_cubes[i].orientation.x,
+			app_cubes[i].orientation.y, app_cubes[i].orientation.z);
+		glm::vec3 cube_pos(app_cubes[i].position.x, app_cubes[i].position.y, app_cubes[i].position.z);
 
-		// Update the shader's constant buffer with the transform matrix info, and then draw the mesh!
-		XMStoreFloat4x4(&transform_buffer.world, XMMatrixTranspose(mat_model));
-		d3d_context->UpdateSubresource(app_constant_buffer, 0, nullptr, &transform_buffer, 0, 0);
-		d3d_context->DrawIndexed((UINT)_countof(app_inds), 0, 0);
+		glm::mat4 mat_model = glm::translate(glm::mat4(1.0f), cube_pos) * glm::mat4_cast(cube_orientation) * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f));
+		transform_buffer.world = mat_model;
+
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(app_transform_buffer_t), &transform_buffer);
+		glDrawElements(GL_TRIANGLES, (GLsizei)(sizeof(app_inds) / sizeof(app_inds[0])), GL_UNSIGNED_SHORT, 0);
 	}
+
+	glBindVertexArray(0);
+	glUseProgram(0);
 }
 
 ///////////////////////////////////////////
@@ -971,142 +968,4 @@ void app_update_predicted() {
 		app_cubes[i] = xr_input.renderHand[i] ? xr_input.handPose[i] : xr_pose_identity;
 	}
 }
-
-/////////////////////////////////////////// 
-// A window to view on Desktop
-///////////////////////////////////////////
-
-// A simple WindowProc
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
-	switch (message) {
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		return 0;
-	}
-	return DefWindowProc(hWnd, message, wParam, lParam);
-}
-
-// Create the window before starting OpenXR initialization
-bool CreateAppWindow(HINSTANCE hInstance, int nCmdShow) {
-	WNDCLASS wc = {};
-	wc.lpfnWndProc = WndProc;
-	wc.hInstance = hInstance;
-	wc.lpszClassName = _T("OpenXRWinClass");
-	if (!RegisterClass(&wc)) return false;
-
-	g_hWnd = CreateWindowEx(0, _T("OpenXRWinClass"), _T("ChiselEngine - OpenXR Desktop Window"),
-		WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-		1280, 720, nullptr, nullptr, hInstance, nullptr);
-	if (!g_hWnd) return false;
-
-	ShowWindow(g_hWnd, nCmdShow);
-	return true;
-}
-
-// Swap chain creation for the desktop window
-bool CreateDesktopSwapChain() {
-	DXGI_SWAP_CHAIN_DESC scd = {};
-	scd.BufferCount = 2;
-	scd.BufferDesc.Width = 1280; 
-	scd.BufferDesc.Height = 720;  
-	scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	scd.OutputWindow = g_hWnd;
-	scd.SampleDesc.Count = 1;
-	scd.Windowed = TRUE;
-	scd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-
-	IDXGIDevice* dxgiDevice = nullptr;
-	IDXGIAdapter* dxgiAdapter = nullptr;
-	IDXGIFactory* dxgiFactory = nullptr;
-	if (FAILED(d3d_device->QueryInterface(__uuidof(IDXGIDevice), (void**)&dxgiDevice)))
-		return false;
-	if (FAILED(dxgiDevice->GetAdapter(&dxgiAdapter))) {
-		dxgiDevice->Release();
-		return false;
-	}
-	if (FAILED(dxgiAdapter->GetParent(__uuidof(IDXGIFactory), (void**)&dxgiFactory))) {
-		dxgiAdapter->Release();
-		dxgiDevice->Release();
-		return false;
-	}
-
-	HRESULT hr = dxgiFactory->CreateSwapChain(d3d_device, &scd, &g_swapChain);
-	dxgiFactory->Release();
-	dxgiAdapter->Release();
-	dxgiDevice->Release();
-	if (FAILED(hr)) return false;
-
-	// Create a render target view for the swap chain
-	ID3D11Texture2D* pBackBuffer = nullptr;
-	g_swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&pBackBuffer);
-	d3d_device->CreateRenderTargetView(pBackBuffer, nullptr, &g_swapChainRTV);
-	pBackBuffer->Release();
-
-	return true;
-}
-
-// Render the desktop window
-void RenderToDesktopWindow() {
-	if (g_swapChain == nullptr || g_swapChainRTV == nullptr) return;
-
-	// Choose the first eye’s parameters (eye 0) as a reference.
-	if (xr_swapchains.empty()) return;
-
-	// Set viewport for the desktop window (e.g., the full window)
-	D3D11_VIEWPORT vp = {};
-	vp.Width = 1280.0f;
-	vp.Height = 720.0f;
-	vp.MinDepth = 0.0f;
-	vp.MaxDepth = 1.0f;
-	d3d_context->RSSetViewports(1, &vp);
-
-	// Set the swapchain render target for the desktop
-	float clearColor[4] = { 0.1f, 0.1f, 0.15f, 1.0f };
-	d3d_context->OMSetRenderTargets(1, &g_swapChainRTV, nullptr);
-	d3d_context->ClearRenderTargetView(g_swapChainRTV, clearColor);
-
-	// Now, we want to simulate one of the VR views. We can use the last known poses from `xr_views[0]` (left eye)
-	if (!xr_views.empty()) {
-		XrView& vrView = xr_views[0];
-
-		// Construct the same camera matrices used in app_draw
-		XMMATRIX mat_projection = d3d_xr_projection(vrView.fov, 0.05f, 100.0f);
-		XMMATRIX mat_view = XMMatrixInverse(nullptr, XMMatrixAffineTransformation(
-			DirectX::g_XMOne, DirectX::g_XMZero,
-			XMLoadFloat4((XMFLOAT4*)&vrView.pose.orientation),
-			XMLoadFloat3((XMFLOAT3*)&vrView.pose.position)));
-
-		// Use the same app_draw logic, but adapted:
-		d3d_context->VSSetConstantBuffers(0, 1, &app_constant_buffer);
-		d3d_context->VSSetShader(app_vshader, nullptr, 0);
-		d3d_context->PSSetShader(app_pshader, nullptr, 0);
-
-		UINT strides[] = { sizeof(float) * 6 };
-		UINT offsets[] = { 0 };
-		d3d_context->IASetVertexBuffers(0, 1, &app_vertex_buffer, strides, offsets);
-		d3d_context->IASetIndexBuffer(app_index_buffer, DXGI_FORMAT_R16_UINT, 0);
-		d3d_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		d3d_context->IASetInputLayout(app_shader_layout);
-
-		app_transform_buffer_t transform_buffer;
-		XMStoreFloat4x4(&transform_buffer.viewproj, XMMatrixTranspose(mat_view * mat_projection));
-
-		// Draw the cubes
-		for (size_t i = 0; i < app_cubes.size(); i++) {
-			XMMATRIX mat_model = XMMatrixAffineTransformation(
-				DirectX::g_XMOne * 0.05f, DirectX::g_XMZero,
-				XMLoadFloat4((XMFLOAT4*)&app_cubes[i].orientation),
-				XMLoadFloat3((XMFLOAT3*)&app_cubes[i].position));
-
-			XMStoreFloat4x4(&transform_buffer.world, XMMatrixTranspose(mat_model));
-			d3d_context->UpdateSubresource(app_constant_buffer, 0, nullptr, &transform_buffer, 0, 0);
-			d3d_context->DrawIndexed((UINT)_countof(app_inds), 0, 0);
-		}
-	}
-
-	// Present the desktop window swapchain
-	g_swapChain->Present(1, 0);
-}
-
 
