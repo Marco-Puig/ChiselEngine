@@ -73,16 +73,16 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>$(ProjectDir)\OpenXR\include;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)\OpenXR\bin\$(Platform)\$(Configuration);$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)\OpenXR\include;C:\Users\marco\Documents\ChiselEngine\Libraries\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)\OpenXR\bin\$(Platform)\$(Configuration);C:\Users\marco\Documents\ChiselEngine\Libraries\include;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <IncludePath>$(ProjectDir)\OpenXR\include;$(IncludePath)</IncludePath>
     <LibraryPath>$(ProjectDir)\OpenXR\bin\$(Platform)\$(Configuration);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(ProjectDir)\OpenXR\include;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)\OpenXR\bin\$(Platform)\$(Configuration);$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)\OpenXR\include;C:\Users\marco\Documents\ChiselEngine\Libraries\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)\OpenXR\bin\$(Platform)\$(Configuration);C:\Users\marco\Documents\ChiselEngine\Libraries\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>$(ProjectDir)\OpenXR\include;$(IncludePath)</IncludePath>
@@ -103,6 +103,9 @@
       <Message>
       </Message>
     </PostBuildEvent>
+    <Link>
+      <AdditionalDependencies>glfw.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -119,6 +122,9 @@
       <Message>
       </Message>
     </PostBuildEvent>
+    <Link>
+      <AdditionalDependencies>glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -165,6 +171,7 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="glad.c" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
