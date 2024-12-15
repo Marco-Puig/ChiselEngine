@@ -4,7 +4,7 @@ Chisel Engine is an OpenXR Game Engine that is being developed for my Steam game
 ## Instructions 
 Since this is project is working of a Solution (.sln) file, I recommend to use Visual Studio 2022
 
-Ensure you have the C++ and DirectX Package Installed (You will be shown these as option in the Visual Studio Installer)
+Ensure you have the C++ Development Package Installed (You will be shown these as option in the Visual Studio Installer)
 
 Using Visual Studio, you will need to Install the following NuGet packages: 
 
@@ -15,8 +15,8 @@ Before running, make sure you have an instance of OpenXR running along with a co
 
 ## Preview and Features
 
-- OpenXR and DirectX implemented (Moving to OpenGL Rendering)
-- Desktop Window to Display what is shown on the VR Headset via OpenXR (Two Swapchains)
+- OpenXR and OpenGL implemented
+- Desktop Window to Display what is shown on the VR Headset via OpenXR (Two Swapchains) [In-Progess of Rework]
 - Controller detection and input support
 
 <img width="441" height="300" alt="image" src="https://github.com/user-attachments/assets/1adce4f5-cc00-4753-a3f2-f30043975e04" />
