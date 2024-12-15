@@ -87,7 +87,16 @@ GLuint app_ebo; // Element Buffer Object (for indices)
 vector<XrPosef> app_cubes; // Cube positions
 
 HWND g_hWnd = nullptr; // Window handle
-GLFWwindow* gl_window = nullptr; // GLFW window
+
+GLFWwindow* window; // Assume we have a valid GLFWwindow*
+int desktopWidth = 1280;
+int desktopHeight = 720;
+
+extern uint32_t leftEyeImageIndex; // Set during xrAcquireSwapchainImage calls for left eye
+int left_eye_index = 0; // left eye at index 0
+extern std::vector<swapchain_t> xr_swapchains;
+extern GLFWwindow* window;
+extern int desktopWidth, desktopHeight;
 
 void app_init();
 void app_draw(XrCompositionLayerProjectionView& layerView);
@@ -201,7 +210,7 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	GLFWwindow* window = glfwCreateWindow(1280, 720, "Chisel Engine", nullptr, nullptr);
+	window = glfwCreateWindow(desktopWidth, desktopHeight, "Chisel Engine", nullptr, nullptr);
 
 	if (!window) {
 		MessageBox(nullptr, _T("Window creation failed\n"), _T("Error"), MB_OK);
@@ -228,6 +237,7 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 	openxr_make_actions();
 	app_init();
 
+	// Enable depth 
 	glEnable(GL_DEPTH_TEST);
 
 	bool quit = false;
@@ -235,7 +245,7 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 		// Poll for events (Windows and/or GLFW)
 		glfwPollEvents();
 
-		// depth buffer
+		// assign depth buffer
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		if (glfwWindowShouldClose(window))
@@ -245,18 +255,52 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 		if (quit) break;
 
 		if (xr_running) {
+			// Poll input actions and update your app logic
 			openxr_poll_actions();
 			app_update();
+
+			// Render the VR frame into the XR swapchains
 			openxr_render_frame();
 
-			// Render your desktop window content as needed
-			// For now, just swap buffers:
-			glfwSwapBuffers(window);
+			/*swapchain_t& left_eye_swapchain = xr_swapchains[left_eye_index];
 
+			// Retrieve the left eye's FBO from the current frame's rendered image
+			GLuint left_eye_fbo = left_eye_swapchain.surface_data[leftEyeImageIndex].fbo;
+			int32_t eye_width = left_eye_swapchain.width;
+			int32_t eye_height = left_eye_swapchain.height;
+
+			// Bind the desktop's default framebuffer (window) and clear it
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glViewport(0, 0, desktopWidth, desktopHeight);
+			glClearColor(0, 0, 0, 1);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+			// Blit (copy) the rendered image from the left eye FBO to the desktop window
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, left_eye_fbo);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+			glBlitFramebuffer(
+				0, 0, eye_width, eye_height,        // Source dimensions (left eye FBO)
+				0, 0, desktopWidth, desktopHeight,  // Destination dimensions (desktop window)
+				GL_COLOR_BUFFER_BIT, GL_LINEAR
+			);
+
+			// Swap the desktop window's buffers to present the image
+			glfwSwapBuffers(window);
+			*/
+
+			// If the XR session is not visible or focused, sleep a bit to reduce CPU usage
 			if (xr_session_state != XR_SESSION_STATE_VISIBLE &&
 				xr_session_state != XR_SESSION_STATE_FOCUSED) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(250));
 			}
+		}
+		else {
+			// If XR is not running, you could just clear the desktop window and swap buffers, or do nothing
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glViewport(0, 0, desktopWidth, desktopHeight);
+			glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			glfwSwapBuffers(window);
 		}
 	}
 
@@ -265,8 +309,6 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 	glfwTerminate();
 	return 0;
 }
-
-
 
 ///////////////////////////////////////////
 // OpenXR code                           //
@@ -926,8 +968,4 @@ void app_update_predicted() {
 		app_cubes[i] = xr_input.renderHand[i] ? xr_input.handPose[i] : xr_pose_identity;
 	}
 }
-
-/////////////////////////////////////////// 
-// A window to view on Desktop
-///////////////////////////////////////////
 

@@ -73,16 +73,16 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>$(ProjectDir)\OpenXR\include;C:\Users\marco\Documents\ChiselEngine\Libraries\include;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)\OpenXR\bin\$(Platform)\$(Configuration);C:\Users\marco\Documents\ChiselEngine\Libraries\include;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)\OpenXR\include;$(ProjectDir)\Libraries\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)\OpenXR\bin\$(Platform)\$(Configuration);$(ProjectDir)\Libraries\include;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <IncludePath>$(ProjectDir)\OpenXR\include;$(IncludePath)</IncludePath>
     <LibraryPath>$(ProjectDir)\OpenXR\bin\$(Platform)\$(Configuration);$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>$(ProjectDir)\OpenXR\include;C:\Users\marco\Documents\ChiselEngine\Libraries\include;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)\OpenXR\bin\$(Platform)\$(Configuration);C:\Users\marco\Documents\ChiselEngine\Libraries\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)\OpenXR\include;$(ProjectDir)\Libraries\include;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)\OpenXR\bin\$(Platform)\$(Configuration);$(ProjectDir)\Libraries\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>$(ProjectDir)\OpenXR\include;$(IncludePath)</IncludePath>
