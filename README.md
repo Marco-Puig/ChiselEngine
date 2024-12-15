@@ -16,7 +16,7 @@ Before running, make sure you have an instance of OpenXR running along with a co
 ## Preview and Features
 
 - OpenXR and OpenGL implemented
-- Desktop Window to Display what is shown on the VR Headset via OpenXR (Two Swapchains) [In-Progess of Rework]
+- Desktop Window to Display what is shown on the VR Headset via OpenXR
 - Controller detection and input support
 
 <img width="441" height="300" alt="image" src="https://github.com/user-attachments/assets/1adce4f5-cc00-4753-a3f2-f30043975e04" />
