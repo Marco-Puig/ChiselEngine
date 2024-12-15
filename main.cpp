@@ -1,7 +1,7 @@
 // Tell OpenXR what platform code we'll be using
 #define XR_USE_PLATFORM_WIN32
 #define XR_USE_GRAPHICS_API_OPENGL
-#define OPENGL_SWAPCHAIN_FORMAT 0x8C43
+#define OPENGL_SWAPCHAIN_FORMAT 0x8C43 // GL_SRGB8_ALPHA8 for OpenXR/DX11 
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h> // Windows functions such as Window creation
@@ -25,7 +25,6 @@
 #include <algorithm> // any_of
 
 #include <tchar.h> // TCHAR type for parsing vertex and frag shader code
-
 
 #include <cstdio> // parse - debug
 #include <cmath> // sin, cos
@@ -82,7 +81,7 @@ GLuint app_vao; // VAO (Vertex Array Object) for input layout
 
 GLuint app_ubo; // Uniform Buffer Object for constant data
 GLuint app_vbo; // Vertex Buffer Object
-GLuint app_ebo; // Element Buffer Object (for indices)
+GLuint app_ebo; // Element Buffer Object (for indices) - NEED FOR OPENGL VERTICES OPTIMIZATION
 
 vector<XrPosef> app_cubes; // Cube positions
 
@@ -90,9 +89,9 @@ HWND g_hWnd = nullptr; // Window handle
 
 GLFWwindow* window; // Assume we have a valid GLFWwindow*
 int desktopWidth = 1280;
-int desktopHeight = 720;
+int desktopHeight = 800;
 
-extern uint32_t leftEyeImageIndex; // Set during xrAcquireSwapchainImage calls for left eye
+uint32_t leftEyeImageIndex; // Set during xrAcquireSwapchainImage calls for left eye
 int left_eye_index = 0; // left eye at index 0
 extern std::vector<swapchain_t> xr_swapchains;
 extern GLFWwindow* window;
@@ -130,14 +129,8 @@ void openxr_poll_predicted(XrTime predicted_time);
 void openxr_render_frame();
 bool openxr_render_layer(XrTime predictedTime, vector<XrCompositionLayerProjectionView>& projectionViews, XrCompositionLayerProjection& layer);
 void gl_swapchain_destroy(swapchain_t& swapchain);
-void gl_render_layer(XrCompositionLayerProjectionView& view, swapchain_surfdata_t& surface);
+void gl_render_layer(XrCompositionLayerProjectionView& view, swapchain_surfdata_t& surface, GLFWwindow* window);
 swapchain_surfdata_t gl_make_surface_data(XrBaseInStructure& swapchain_img, int32_t width, int32_t height);
-
-///////////////////////////////////////////
-
-// bool CreateAppWindow(HINSTANCE hInstance, int nCmdShow);
-// bool CreateDesktopSwapChain();
-// void RenderToDesktopWindow();
 
 ///////////////////////////////////////////
 
@@ -173,7 +166,8 @@ void main() {
 )";
 
 ///////////////////////////////////////////
-// Demo Cube Model 					    //
+// Demo Cube Model                       //
+///////////////////////////////////////////
 
 float app_verts[] = {
 	-1,-1,-1, -1,-1,-1, // Bottom verts
@@ -205,12 +199,11 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 		return 1;
 	}
 
-	// Create a GLFW window with an OpenGL context
+	// Create a GLFW window with an OpenGL context - OpenGL 4.3 Core
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-	window = glfwCreateWindow(desktopWidth, desktopHeight, "Chisel Engine", nullptr, nullptr);
+	window = glfwCreateWindow(desktopWidth, desktopHeight, "Chisel Engine - OpenGL 4.3", nullptr, nullptr);
 
 	if (!window) {
 		MessageBox(nullptr, _T("Window creation failed\n"), _T("Error"), MB_OK);
@@ -241,7 +234,7 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 	glEnable(GL_DEPTH_TEST);
 
 	bool quit = false;
-	while (!quit) {
+	while (!glfwWindowShouldClose(window)) {
 		// Poll for events (Windows and/or GLFW)
 		glfwPollEvents();
 
@@ -262,31 +255,8 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 			// Render the VR frame into the XR swapchains
 			openxr_render_frame();
 
-			/*swapchain_t& left_eye_swapchain = xr_swapchains[left_eye_index];
-
-			// Retrieve the left eye's FBO from the current frame's rendered image
-			GLuint left_eye_fbo = left_eye_swapchain.surface_data[leftEyeImageIndex].fbo;
-			int32_t eye_width = left_eye_swapchain.width;
-			int32_t eye_height = left_eye_swapchain.height;
-
-			// Bind the desktop's default framebuffer (window) and clear it
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glViewport(0, 0, desktopWidth, desktopHeight);
-			glClearColor(0, 0, 0, 1);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-			// Blit (copy) the rendered image from the left eye FBO to the desktop window
-			glBindFramebuffer(GL_READ_FRAMEBUFFER, left_eye_fbo);
-			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-			glBlitFramebuffer(
-				0, 0, eye_width, eye_height,        // Source dimensions (left eye FBO)
-				0, 0, desktopWidth, desktopHeight,  // Destination dimensions (desktop window)
-				GL_COLOR_BUFFER_BIT, GL_LINEAR
-			);
-
-			// Swap the desktop window's buffers to present the image
+			// Swap the GLFW buffers
 			glfwSwapBuffers(window);
-			*/
 
 			// If the XR session is not visible or focused, sleep a bit to reduce CPU usage
 			if (xr_session_state != XR_SESSION_STATE_VISIBLE &&
@@ -294,19 +264,10 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(250));
 			}
 		}
-		else {
-			// If XR is not running, you could just clear the desktop window and swap buffers, or do nothing
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glViewport(0, 0, desktopWidth, desktopHeight);
-			glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-			glfwSwapBuffers(window);
-		}
 	}
 
 	openxr_shutdown();
-	glfwDestroyWindow(window);
-	glfwTerminate();
+	opengl_shutdown();
 	return 0;
 }
 
@@ -577,6 +538,7 @@ void openxr_shutdown() {
 }
 
 void opengl_shutdown() {
+	glfwDestroyWindow(window);
 	glfwTerminate();
 }
 
@@ -756,7 +718,7 @@ bool openxr_render_layer(XrTime predictedTime, vector<XrCompositionLayerProjecti
 		views[i].subImage.imageRect.extent = { xr_swapchains[i].width, xr_swapchains[i].height };
 
 		// Call the rendering callback with our view and swapchain info
-		gl_render_layer(views[i], xr_swapchains[i].surface_data[img_id]);
+		gl_render_layer(views[i], xr_swapchains[i].surface_data[img_id], window);
 
 		// And tell OpenXR we're done with rendering to this one!
 		XrSwapchainImageReleaseInfo release_info = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
@@ -850,16 +812,29 @@ swapchain_surfdata_t gl_make_surface_data(XrBaseInStructure& swapchain_img, int3
 	return result;
 }
 
-void gl_render_layer(XrCompositionLayerProjectionView& view, swapchain_surfdata_t& surface) {
+// Swaping between the headset and desktop window framebuffers
+void gl_render_layer(XrCompositionLayerProjectionView& view, swapchain_surfdata_t& surface, GLFWwindow* window) {
+	// Render to the headset's framebuffer
 	glBindFramebuffer(GL_FRAMEBUFFER, surface.fbo);
 	glViewport(view.subImage.imageRect.offset.x, view.subImage.imageRect.offset.y,
 		view.subImage.imageRect.extent.width, view.subImage.imageRect.extent.height);
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	extern void app_draw(XrCompositionLayerProjectionView & view);
-	app_draw(view);
+	app_draw(view); // first draw for the headset
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	// Render to the desktop window's default framebuffer
+	glfwMakeContextCurrent(window); 
+	int windowWidth, windowHeight;
+	glfwGetFramebufferSize(window, &windowWidth, &windowHeight);
+
+	glViewport(0, 0, windowWidth, windowHeight);
+	glClearColor(0, 0, 0, 1);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	app_draw(view); // second draw for the desktop window
 }
+
 
 void gl_swapchain_destroy(swapchain_t& swapchain) {
 	for (auto& surf : swapchain.surface_data) {
