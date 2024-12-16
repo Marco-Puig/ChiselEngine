@@ -19,7 +19,7 @@ Before running, make sure you have an instance of OpenXR running along with a co
 - Desktop Window to Display what is shown on the VR Headset via OpenXR
 - Controller detection and input support
 
-![prev](https://github.com/user-attachments/assets/07ece90b-fb85-455f-acdb-1c652f3ed7d8)
+<img width="638" alt="image" src="https://github.com/user-attachments/assets/38dd3bd8-a5ea-43e9-9330-4a01952d13a9" />
 
 
 
