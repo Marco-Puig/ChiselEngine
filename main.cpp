@@ -15,6 +15,10 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 
+// For texture loading
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h> 
+
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp> // glm::translate, glm::rotate, glm::scale, glm::perspective
@@ -32,7 +36,7 @@
 #include <iostream> // std namespace
 #include <sstream> // string conversions
 
-using namespace std; // standard - std lib 
+using namespace std; // standard - std lib
 
 ///////////////////////////////////////////
 
@@ -77,6 +81,8 @@ struct app_transform_buffer_t {
 XrFormFactor            app_config_form = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
 XrViewConfigurationType app_config_view = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
 
+///////////////////////////////////////////
+
 GLuint app_shader_program = 0;
 GLuint app_uniform_buffer = 0;
 
@@ -88,17 +94,30 @@ GLuint app_ebo; // Element Buffer Object (for indices) - NEED FOR OPENGL VERTICE
 
 vector<XrPosef> app_cubes; // Cube positions
 
+///////////////////////////////////////////
+
+GLuint skyboxShaderProgram = 0; 
+GLuint skyboxVAO;
+GLuint skyboxVBO;
+GLuint skyboxEBO;
+GLuint cubemapTexture = 0; 
+GLuint loadCubemap(vector<string> faces);
+
 HWND g_hWnd = nullptr; // Window handle
 
 GLFWwindow* window; // Assume we have a valid GLFWwindow*
 int desktopWidth = 1280;
 int desktopHeight = 800;
 
+///////////////////////////////////////////
+
 uint32_t leftEyeImageIndex; // Set during xrAcquireSwapchainImage calls for left eye
 int left_eye_index = 0; // left eye at index 0
 extern std::vector<swapchain_t> xr_swapchains;
 extern GLFWwindow* window;
 extern int desktopWidth, desktopHeight;
+
+///////////////////////////////////////////
 
 void app_init();
 void app_draw(XrCompositionLayerProjectionView& layerView);
@@ -174,6 +193,34 @@ out vec4 fragColor;
 
 void main() {
     fragColor = vec4(vColor,1.0);
+}
+)";
+
+const char* cubemap_vertex_glsl = R"(
+#version 450 core
+layout (location = 0) in vec3 aPos;
+
+uniform mat4 uProjection;
+uniform mat4 uView;
+
+out vec3 TexCoords;
+
+void main() {
+    TexCoords = aPos;
+    vec4 pos = uProjection * uView * vec4(aPos, 1.0);
+    gl_Position = pos.xyww; // trick to ensure depth = 1.0 and we don't discard skybox
+}
+)";
+
+const char* cubemap_fragment_glsl = R"(
+#version 450 core
+in vec3 TexCoords;
+out vec4 FragColor;
+
+uniform samplerCube skybox;
+
+void main() {    
+    FragColor = texture(skybox, TexCoords);
 }
 )";
 
@@ -931,6 +978,40 @@ void app_init() {
 	GLuint blockIndex = glGetUniformBlockIndex(app_shader_program, "TransformBuffer");
 	glUniformBlockBinding(app_shader_program, blockIndex, 0);
 	glBindBufferBase(GL_UNIFORM_BUFFER, 0, app_uniform_buffer);
+
+	// ----------------------------
+	// SKYBOX SETUP
+	// ----------------------------
+	skyboxShaderProgram = gl_create_program(cubemap_vertex_glsl, cubemap_fragment_glsl);
+
+	// Create skybox VAO/VBO/EBO
+	glGenVertexArrays(1, &skyboxVAO);
+	glGenBuffers(1, &skyboxVBO);
+	glGenBuffers(1, &skyboxEBO);
+	glBindVertexArray(skyboxVAO);
+
+	glBindBuffer(GL_ARRAY_BUFFER, skyboxVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, skyboxEBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(skyboxIndices), &skyboxIndices, GL_STATIC_DRAW);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+
+	// Load the cubemap textures
+	std::vector<std::string> faces
+	{
+		"Resources/right.png",
+		"Resources/left.png",
+		"Resources/top.png",
+		"Resources/bottom.png",
+		"Resources/front.png",
+		"Resources/back.png"
+	};
+	cubemapTexture = loadCubemap(faces);
+
+	glBindVertexArray(0);
 }
 
 void app_draw(XrCompositionLayerProjectionView& view) {
@@ -941,6 +1022,27 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 
 	glm::mat4 mat_view = glm::inverse(glm::translate(glm::mat4(1.0f), position) * glm::mat4_cast(orientation));
 
+	// Draw SKYBOX
+	glDepthFunc(GL_LEQUAL); // Ensure skybox passes depth test
+	glUseProgram(skyboxShaderProgram);
+
+	// Remove translation from view matrix for skybox
+	glm::mat4 mat_view_skybox = glm::mat4(glm::mat3(mat_view));
+
+	GLuint uProjLoc = glGetUniformLocation(skyboxShaderProgram, "uProjection");
+	GLuint uViewLoc = glGetUniformLocation(skyboxShaderProgram, "uView");
+	glUniformMatrix4fv(uProjLoc, 1, GL_FALSE, &mat_projection[0][0]);
+	glUniformMatrix4fv(uViewLoc, 1, GL_FALSE, &mat_view_skybox[0][0]);
+	glBindVertexArray(skyboxVAO);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+	glDrawElements(GL_TRIANGLES, sizeof(skyboxIndices) / sizeof(skyboxIndices[0]), GL_UNSIGNED_INT, 0);
+	glBindVertexArray(0);
+	glUseProgram(0);
+
+	glDepthFunc(GL_LESS); // Reset to default depth func
+
+	// DRAW CUBES / MODELS
 	glUseProgram(app_shader_program);
 
 	// Update the uniform buffer with viewproj and world
@@ -1003,8 +1105,8 @@ void calculate_framerate() {
 	if (timeDiff >= 1.0 / 30.0)
 	{
 		// Update the window title
-		std::string FPS = std::to_string(static_cast<int>(((1.0 / timeDiff) * counter)));
-		std::string newTitle = "Chisel Engine - OpenGL 4.3 - " + FPS + "FPS";
+		string FPS = std::to_string(static_cast<int>(((1.0 / timeDiff) * counter)));
+		string newTitle = "Chisel Engine - OpenGL 4.3 - " + FPS + "FPS";
 		glfwSetWindowTitle(window, newTitle.c_str());
 
 		// Lastly, reset the time and counter
@@ -1012,3 +1114,39 @@ void calculate_framerate() {
 		counter = 0;
 	}
 }
+
+///////////////////////////////////////////
+
+GLuint loadCubemap(vector<string> faces)
+{
+	GLuint textureID;
+	glGenTextures(1, &textureID);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+
+	stbi_set_flip_vertically_on_load(false); // Typically not flipping for cube maps
+	int width, height, nrChannels;
+	for (GLuint i = 0; i < faces.size(); i++)
+	{
+		unsigned char* data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
+		if (data)
+		{
+			// JPG = GL_RGB and PNG = GL_RGBA
+			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+				0, GL_SRGB_ALPHA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+			stbi_image_free(data);
+		}
+		else
+		{
+			MessageBox(nullptr, _T("Cubemap texture failed to load"), _T("Error"), MB_OK);
+			stbi_image_free(data);
+		}
+	}
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+	return textureID;
+}
+
