@@ -9,7 +9,11 @@ Ensure you have the C++ Development Package Installed (You will be shown these a
 Using Visual Studio, you will need to Install the following NuGet packages: 
 
 **OpenXR.Loader** \
-**OpenXR.Headers (Should download along with OpenXR.Headers)**
+**OpenXR.Headers (Should download along with OpenXR.Headers)** \
+**Assimp** \
+**Assimp.redist (Should download along with Assimp)**
+
+Additionally, you will need to use your own **OBJ** file(s) in the Resources folder.
 
 Before running, make sure you have an instance of OpenXR running along with a connected VR Headset or MR Device.
 
