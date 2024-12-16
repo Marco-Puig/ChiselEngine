@@ -13,7 +13,8 @@ Using Visual Studio, you will need to Install the following NuGet packages:
 **Assimp** \
 **Assimp.redist (Should download along with Assimp)**
 
-Additionally, you will need to use your own **OBJ** file(s) in the Resources folder.
+Additionally, you will need to use your own **OBJ** file(s) in the Resources folder.\
+For example: `Resources/suzanne.obj`
 
 Before running, make sure you have an instance of OpenXR running along with a connected VR Headset or MR Device.
 
