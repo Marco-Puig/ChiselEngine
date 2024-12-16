@@ -29,6 +29,9 @@
 #include <cstdio> // parse - debug
 #include <cmath> // sin, cos
 
+#include <iostream> // std namespace
+#include <sstream> // string conversions
+
 using namespace std; // standard - std lib 
 
 ///////////////////////////////////////////
@@ -110,6 +113,7 @@ XrInstance     xr_instance = {};
 XrSession      xr_session = {};
 XrSessionState xr_session_state = XR_SESSION_STATE_UNKNOWN;
 bool           xr_running = false;
+bool		   quit = false;
 XrSpace        xr_app_space = {};
 XrSystemId     xr_system_id = XR_NULL_SYSTEM_ID;
 input_state_t  xr_input = { };
@@ -131,6 +135,14 @@ bool openxr_render_layer(XrTime predictedTime, vector<XrCompositionLayerProjecti
 void gl_swapchain_destroy(swapchain_t& swapchain);
 void gl_render_layer(XrCompositionLayerProjectionView& view, swapchain_surfdata_t& surface, GLFWwindow* window);
 swapchain_surfdata_t gl_make_surface_data(XrBaseInStructure& swapchain_img, int32_t width, int32_t height);
+
+///////////////////////////////////////////
+
+double prevTime = 0.0;
+double crntTime = 0.0;
+double timeDiff;
+unsigned int counter = 0;
+void calculate_framerate();
 
 ///////////////////////////////////////////
 
@@ -187,6 +199,43 @@ uint16_t app_inds[] = {
 };
 
 ///////////////////////////////////////////
+// SkyBox - Cubemap                      //
+///////////////////////////////////////////
+
+float skyboxVertices[] =
+{
+	//   Coordinates
+	-1.0f, -1.0f,  1.0f,//        7--------6
+	 1.0f, -1.0f,  1.0f,//       /|       /|
+	 1.0f, -1.0f, -1.0f,//      4--------5 |
+	-1.0f, -1.0f, -1.0f,//      | |      | |
+	-1.0f,  1.0f,  1.0f,//      | 3------|-2
+	 1.0f,  1.0f,  1.0f,//      |/       |/
+	 1.0f,  1.0f, -1.0f,//      0--------1
+	-1.0f,  1.0f, -1.0f
+};
+
+unsigned int skyboxIndices[] =
+{
+	// Right
+	1, 2, 6,
+	6, 5, 1,
+	// Left
+	0, 4, 7,
+	7, 3, 0,
+	// Top
+	4, 5, 6,
+	6, 7, 4,
+	// Bottom
+	0, 3, 2,
+	2, 1, 0,
+	// Back
+	0, 1, 5,
+	5, 4, 0,
+	// Front
+	3, 7, 6,
+	6, 2, 3
+};
 
 ///////////////////////////////////////////
 // Main                                  //
@@ -233,22 +282,22 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 	// Enable depth 
 	glEnable(GL_DEPTH_TEST);
 
-	bool quit = false;
 	while (!glfwWindowShouldClose(window)) {
+
+		// Calculate framerate and update window title with it
+		calculate_framerate();
+
 		// Poll for events (Windows and/or GLFW)
 		glfwPollEvents();
 
 		// assign depth buffer
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		if (glfwWindowShouldClose(window))
-			quit = true;
-
+		// Poll input actions at start of frame
 		openxr_poll_events(quit);
-		if (quit) break;
 
 		if (xr_running) {
-			// Poll input actions and update your app logic
+			// Poll input actions and update (e.g. hand tracking)
 			openxr_poll_actions();
 			app_update();
 
@@ -543,7 +592,6 @@ void opengl_shutdown() {
 }
 
 ///////////////////////////////////////////
-
 void openxr_poll_events(bool& exit) {
 	exit = false;
 
@@ -817,7 +865,7 @@ void gl_render_layer(XrCompositionLayerProjectionView& view, swapchain_surfdata_
 	// Render to the headset's framebuffer
 	glBindFramebuffer(GL_FRAMEBUFFER, surface.fbo);
 	glViewport(view.subImage.imageRect.offset.x, view.subImage.imageRect.offset.y,
-		view.subImage.imageRect.extent.width, view.subImage.imageRect.extent.height);
+		view.subImage.imageRect.extent.width, view.subImage.imageRect.extent.height); // set the viewport to headset
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	extern void app_draw(XrCompositionLayerProjectionView & view);
@@ -825,7 +873,7 @@ void gl_render_layer(XrCompositionLayerProjectionView& view, swapchain_surfdata_
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	// Render to the desktop window's default framebuffer
-	glfwMakeContextCurrent(window); 
+	glfwMakeContextCurrent(window); // make the desktop window current context
 	int windowWidth, windowHeight;
 	glfwGetFramebufferSize(window, &windowWidth, &windowHeight);
 
@@ -944,3 +992,23 @@ void app_update_predicted() {
 	}
 }
 
+///////////////////////////////////////////
+
+void calculate_framerate() {
+	// Update the time and counter
+	crntTime = glfwGetTime();
+	timeDiff = crntTime - prevTime;
+	counter++;
+
+	if (timeDiff >= 1.0 / 30.0)
+	{
+		// Update the window title
+		std::string FPS = std::to_string(static_cast<int>(((1.0 / timeDiff) * counter)));
+		std::string newTitle = "Chisel Engine - OpenGL 4.3 - " + FPS + "FPS";
+		glfwSetWindowTitle(window, newTitle.c_str());
+
+		// Lastly, reset the time and counter
+		prevTime = crntTime;
+		counter = 0;
+	}
+}
