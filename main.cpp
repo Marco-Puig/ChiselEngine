@@ -24,6 +24,11 @@
 #include <glm/gtc/matrix_transform.hpp> // glm::translate, glm::rotate, glm::scale, glm::perspective
 #include <glm/gtc/quaternion.hpp>
 
+// Model loading
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
 #include <thread> // sleep_for
 #include <vector> // dynamic array management for cube positions
 #include <algorithm> // any_of
@@ -165,6 +170,19 @@ void calculate_framerate();
 
 ///////////////////////////////////////////
 
+struct Model {
+	GLuint vao;       // Vertex Array Object
+	GLuint vbo;       // Vertex Buffer Object
+	GLuint ebo;       // Element Buffer Object
+	size_t indexCount; // Number of indices
+};
+
+Model loadOBJModel(const std::string& path);
+void drawModel(const Model& model, const glm::mat4& viewProj, const glm::mat4& modelMatrix);
+void cleanupModel(const Model& model);
+
+///////////////////////////////////////////
+
 const char* vertex_glsl = R"(
 #version 450 core
 layout (location = 0) in vec3 in_pos;
@@ -244,6 +262,8 @@ uint16_t app_inds[] = {
 	6,2,1, 5,6,1, 3,7,4, 0,3,4,
 	4,5,1, 0,4,1, 2,7,3, 2,6,7,
 };
+
+Model rockModel;
 
 ///////////////////////////////////////////
 // SkyBox - Cubemap                      //
@@ -326,6 +346,9 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 	openxr_make_actions();
 	app_init();
 
+	// Load rock model - replace this with a much more scalable model loading system
+	rockModel = loadOBJModel("Resources/suzanne.obj");
+
 	// Enable depth 
 	glEnable(GL_DEPTH_TEST);
 
@@ -362,8 +385,10 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 		}
 	}
 
+	cleanupModel(rockModel);
 	openxr_shutdown();
 	opengl_shutdown();
+
 	return 0;
 }
 
@@ -1000,7 +1025,7 @@ void app_init() {
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
 	// Load the cubemap textures
-	std::vector<std::string> faces
+	vector<string> faces
 	{
 		"Resources/right.png",
 		"Resources/left.png",
@@ -1042,14 +1067,15 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 
 	glDepthFunc(GL_LESS); // Reset to default depth func
 
-	// DRAW CUBES / MODELS
+	// DRAW CUBES 
 	glUseProgram(app_shader_program);
 
 	// Update the uniform buffer with viewproj and world
 	// We'll draw each cube individually, updating the world matrix each time.
+	
 	app_transform_buffer_t transform_buffer;
 	transform_buffer.viewproj = mat_projection * mat_view;
-
+	
 	glBindBuffer(GL_UNIFORM_BUFFER, app_uniform_buffer);
 
 	glBindVertexArray(app_vao);
@@ -1065,6 +1091,15 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(app_transform_buffer_t), &transform_buffer);
 		glDrawElements(GL_TRIANGLES, (GLsizei)(sizeof(app_inds) / sizeof(app_inds[0])), GL_UNSIGNED_SHORT, 0);
 	}
+
+	// DRAW ROCK MODEL or well... any model 
+	glm::mat4 modelMatrix = 
+		glm::translate(glm::mat4(1.0f), 
+		glm::vec3(0.0f, 0.0f, -5.0f)) *
+		glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
+
+	drawModel(rockModel, transform_buffer.viewproj, modelMatrix);
+
 
 	glBindVertexArray(0);
 	glUseProgram(0);
@@ -1148,5 +1183,84 @@ GLuint loadCubemap(vector<string> faces)
 	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
 	return textureID;
+}
+
+///////////////////////////////////////////
+
+Model loadOBJModel(const std::string& path) {
+	Assimp::Importer importer;
+	const aiScene* scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs);
+
+	if (!scene || !scene->HasMeshes()) {
+		exit(EXIT_FAILURE);
+	}
+
+	aiMesh* mesh = scene->mMeshes[0];
+
+	std::vector<float> vertices;
+	std::vector<uint32_t> indices;
+
+	// Extract vertex data
+	for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
+		aiVector3D pos = mesh->mVertices[i];
+		aiVector3D norm = mesh->HasNormals() ? mesh->mNormals[i] : aiVector3D(0.0f, 0.0f, 0.0f);
+		vertices.insert(vertices.end(), { pos.x, pos.y, pos.z, norm.x, norm.y, norm.z });
+	}
+
+	// Extract index data
+	for (unsigned int i = 0; i < mesh->mNumFaces; ++i) {
+		aiFace face = mesh->mFaces[i];
+		for (unsigned int j = 0; j < face.mNumIndices; ++j) {
+			indices.push_back(face.mIndices[j]);
+		}
+	}
+
+	// OpenGL buffers
+	GLuint vao, vbo, ebo;
+	glGenVertexArrays(1, &vao);
+	glGenBuffers(1, &vbo);
+	glGenBuffers(1, &ebo);
+
+	glBindVertexArray(vao);
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
+
+	// Set vertex attributes (position and normal)
+	glEnableVertexAttribArray(0); // Position
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(1); // Normal
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+
+	glBindVertexArray(0);
+
+	return { vao, vbo, ebo, indices.size() };
+}
+
+void drawModel(const Model& model, const glm::mat4& viewProj, const glm::mat4& modelMatrix) {
+	glUseProgram(app_shader_program);
+
+	// where the model is drawn in the world
+	app_transform_buffer_t transformBuffer;
+	transformBuffer.viewproj = viewProj;
+	transformBuffer.world = modelMatrix;
+
+	glBindBuffer(GL_UNIFORM_BUFFER, app_uniform_buffer);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(app_transform_buffer_t), &transformBuffer);
+
+	glBindVertexArray(model.vao);
+	glDrawElements(GL_TRIANGLES, model.indexCount, GL_UNSIGNED_INT, 0);
+	glBindVertexArray(0);
+
+	glUseProgram(0);
+}
+
+void cleanupModel(const Model& model) {
+	glDeleteBuffers(1, &model.vbo);
+	glDeleteBuffers(1, &model.ebo);
+	glDeleteVertexArrays(1, &model.vao);
 }
 
