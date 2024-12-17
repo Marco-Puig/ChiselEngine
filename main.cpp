@@ -40,6 +40,8 @@
 
 #include <iostream> // std namespace
 #include <sstream> // string conversions
+#include <map> // key-value pairs
+#include <string> // string manipulation
 
 using namespace std; // standard - std lib
 
@@ -89,6 +91,7 @@ XrViewConfigurationType app_config_view = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STE
 ///////////////////////////////////////////
 
 GLuint app_shader_program = 0;
+GLuint cube_shader_program = 0;
 GLuint app_uniform_buffer = 0;
 
 GLuint app_vao; // VAO (Vertex Array Object) for input layout
@@ -111,8 +114,8 @@ GLuint loadCubemap(vector<string> faces);
 HWND g_hWnd = nullptr; // Window handle
 
 GLFWwindow* window; // Assume we have a valid GLFWwindow*
-int desktopWidth = 1280;
-int desktopHeight = 800;
+int desktopWidth = 1160;
+int desktopHeight = 1100;
 
 ///////////////////////////////////////////
 
@@ -170,20 +173,29 @@ void calculate_framerate();
 
 ///////////////////////////////////////////
 
+struct Texture {
+	GLuint id;
+	string type;
+	string path;
+};
+
 struct Model {
 	GLuint vao;       // Vertex Array Object
 	GLuint vbo;       // Vertex Buffer Object
 	GLuint ebo;       // Element Buffer Object
 	size_t indexCount; // Number of indices
+	GLuint textureID; // Add a texture ID
 };
 
-Model loadOBJModel(const std::string& path);
+
+GLuint loadTexture(const string& path);
+Model loadModelWithTexture(const string& objPath, const string& texturePath); // old model loading function - only for models without textures
 void drawModel(const Model& model, const glm::mat4& viewProj, const glm::mat4& modelMatrix);
 void cleanupModel(const Model& model);
 
 ///////////////////////////////////////////
 
-const char* vertex_glsl = R"(
+const char* cube_vertex_glsl = R"(
 #version 450 core
 layout (location = 0) in vec3 in_pos;
 layout (location = 1) in vec3 in_norm;
@@ -204,13 +216,45 @@ void main() {
 }
 )";
 
-const char* fragment_glsl = R"(
+const char* cube_fragment_glsl = R"(
 #version 450 core
 in vec3 vColor;
 out vec4 fragColor;
 
 void main() {
     fragColor = vec4(vColor,1.0);
+}
+)";
+
+const char* vertex_glsl = R"(
+#version 450 core
+layout (location = 0) in vec3 in_pos;
+layout (location = 1) in vec3 in_norm;
+layout (location = 2) in vec2 in_texCoords; // Input texture coordinates
+
+out vec2 TexCoords; // Pass texture coordinates to fragment shader
+
+layout(std140) uniform TransformBuffer {
+    mat4 world;
+    mat4 viewproj;
+};
+
+void main() {
+    TexCoords = in_texCoords;
+    gl_Position = viewproj * world * vec4(in_pos, 1.0);
+}
+
+)";
+
+const char* fragment_glsl = R"(
+#version 450 core
+in vec2 TexCoords; 
+out vec4 fragColor;
+
+uniform sampler2D texture_diffuse; 
+
+void main() {
+	fragColor = texture(texture_diffuse, TexCoords);
 }
 )";
 
@@ -264,6 +308,9 @@ uint16_t app_inds[] = {
 };
 
 Model rockModel;
+Model sceneModel;
+GLuint sandTexture;
+GLuint rockTexture;
 
 ///////////////////////////////////////////
 // SkyBox - Cubemap                      //
@@ -346,8 +393,9 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 	openxr_make_actions();
 	app_init();
 
-	// Load rock model - replace this with a much more scalable model loading system
-	rockModel = loadOBJModel("Resources/suzanne.obj");
+	// Load rock model - replace this with a much more scalable model loading system - Prehaps run Game class (Game.init() or Game.Start()) to load all models
+	rockModel = loadModelWithTexture("Resources/rock_for_david19k.obj", "Resources/rock_texture.jpeg");
+	sceneModel = loadModelWithTexture("Resources/SANDnSTONE_simplified.obj", "Resources/SANDnSTONE_simplified.jpeg");
 
 	// Enable depth 
 	glEnable(GL_DEPTH_TEST);
@@ -386,6 +434,7 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 	}
 
 	cleanupModel(rockModel);
+	cleanupModel(sceneModel);
 	openxr_shutdown();
 	opengl_shutdown();
 
@@ -1036,6 +1085,8 @@ void app_init() {
 	};
 	cubemapTexture = loadCubemap(faces);
 
+	cube_shader_program = gl_create_program(cube_vertex_glsl, cube_fragment_glsl);
+
 	glBindVertexArray(0);
 }
 
@@ -1068,7 +1119,7 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 	glDepthFunc(GL_LESS); // Reset to default depth func
 
 	// DRAW CUBES 
-	glUseProgram(app_shader_program);
+	glUseProgram(cube_shader_program);
 
 	// Update the uniform buffer with viewproj and world
 	// We'll draw each cube individually, updating the world matrix each time.
@@ -1092,14 +1143,18 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 		glDrawElements(GL_TRIANGLES, (GLsizei)(sizeof(app_inds) / sizeof(app_inds[0])), GL_UNSIGNED_SHORT, 0);
 	}
 
-	// DRAW ROCK MODEL or well... any model 
+	// TODO - FOREACH LOOP FOR DRAWING MODELS FROM A LIST (VECTOR) OF MODELS FOR SCALABILITY
+
+	glUseProgram(app_shader_program);
+
+	// DRAW ROCK MODEL and SCENE MODEL
 	glm::mat4 modelMatrix = 
 		glm::translate(glm::mat4(1.0f), 
 		glm::vec3(0.0f, 0.0f, -5.0f)) *
 		glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
 
 	drawModel(rockModel, transform_buffer.viewproj, modelMatrix);
-
+	drawModel(sceneModel, transform_buffer.viewproj, modelMatrix);
 
 	glBindVertexArray(0);
 	glUseProgram(0);
@@ -1187,10 +1242,11 @@ GLuint loadCubemap(vector<string> faces)
 
 ///////////////////////////////////////////
 
-Model loadOBJModel(const std::string& path) {
+Model loadModel(const std::string& path) {
 	Assimp::Importer importer;
 	const aiScene* scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs);
 
+	// if the model did not load properly or has no meshes, exit
 	if (!scene || !scene->HasMeshes()) {
 		exit(EXIT_FAILURE);
 	}
@@ -1243,7 +1299,7 @@ Model loadOBJModel(const std::string& path) {
 void drawModel(const Model& model, const glm::mat4& viewProj, const glm::mat4& modelMatrix) {
 	glUseProgram(app_shader_program);
 
-	// where the model is drawn in the world
+	// Update transformation matrices
 	app_transform_buffer_t transformBuffer;
 	transformBuffer.viewproj = viewProj;
 	transformBuffer.world = modelMatrix;
@@ -1251,6 +1307,12 @@ void drawModel(const Model& model, const glm::mat4& viewProj, const glm::mat4& m
 	glBindBuffer(GL_UNIFORM_BUFFER, app_uniform_buffer);
 	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(app_transform_buffer_t), &transformBuffer);
 
+	// Bind the model's texture
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, model.textureID);
+	glUniform1i(glGetUniformLocation(app_shader_program, "texture_diffuse"), 0);
+
+	// Draw the model
 	glBindVertexArray(model.vao);
 	glDrawElements(GL_TRIANGLES, model.indexCount, GL_UNSIGNED_INT, 0);
 	glBindVertexArray(0);
@@ -1258,9 +1320,110 @@ void drawModel(const Model& model, const glm::mat4& viewProj, const glm::mat4& m
 	glUseProgram(0);
 }
 
+
 void cleanupModel(const Model& model) {
 	glDeleteBuffers(1, &model.vbo);
 	glDeleteBuffers(1, &model.ebo);
 	glDeleteVertexArrays(1, &model.vao);
 }
+
+///////////////////////////////////////////
+
+Model loadModelWithTexture(const std::string& objPath, const std::string& texturePath) {
+	Assimp::Importer importer;
+	const aiScene* scene = importer.ReadFile(objPath,
+		aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenNormals);
+
+	if (!scene || !scene->HasMeshes()) {
+		std::cerr << "Error loading model: " << importer.GetErrorString() << std::endl;
+		exit(EXIT_FAILURE);
+	}
+
+	aiMesh* mesh = scene->mMeshes[0];
+
+	std::vector<float> vertices;
+	std::vector<uint32_t> indices;
+
+	// Extract vertex data: position (3), normal (3), tex coords (2)
+	for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
+		aiVector3D pos = mesh->mVertices[i];
+		aiVector3D norm = mesh->HasNormals() ? mesh->mNormals[i] : aiVector3D(0.0f, 0.0f, 0.0f);
+		aiVector3D texCoord = mesh->HasTextureCoords(0) ? mesh->mTextureCoords[0][i] : aiVector3D(0.0f, 0.0f, 0.0f);
+
+		vertices.insert(vertices.end(), {
+			pos.x, pos.y, pos.z,       // Position
+			norm.x, norm.y, norm.z,    // Normal
+			texCoord.x, texCoord.y     // Texture coordinates
+			});
+	}
+
+	// Extract indices
+	for (unsigned int i = 0; i < mesh->mNumFaces; ++i) {
+		aiFace face = mesh->mFaces[i];
+		for (unsigned int j = 0; j < face.mNumIndices; ++j) {
+			indices.push_back(face.mIndices[j]);
+		}
+	}
+
+	// Load texture
+	GLuint textureID = loadTexture(texturePath);
+
+	// Generate VAO, VBO, and EBO
+	GLuint vao, vbo, ebo;
+	glGenVertexArrays(1, &vao);
+	glGenBuffers(1, &vbo);
+	glGenBuffers(1, &ebo);
+
+	// Bind VAO
+	glBindVertexArray(vao);
+
+	// Bind and fill VBO
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+
+	// Bind and fill EBO
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
+
+	// Configure vertex attributes
+	glEnableVertexAttribArray(0); // Position attribute
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+
+	glEnableVertexAttribArray(1); // Normal attribute
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+
+	glEnableVertexAttribArray(2); // Texture coordinate attribute
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+
+	// Unbind VAO (optional, to avoid accidental changes)
+	glBindVertexArray(0);
+
+	return { vao, vbo, ebo, indices.size(), textureID };
+}
+
+
+GLuint loadTexture(const string& path) {
+	GLuint textureID;
+	glGenTextures(1, &textureID);
+
+	int width, height, nrChannels;
+	unsigned char* data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
+
+	if (data) {
+		GLenum format = (nrChannels == 3) ? GL_RGB : GL_RGBA;
+		glBindTexture(GL_TEXTURE_2D, textureID);
+		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+		glGenerateMipmap(GL_TEXTURE_2D);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	}
+
+	stbi_image_free(data);
+	return textureID;
+}
+
+
 
