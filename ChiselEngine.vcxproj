@@ -172,7 +172,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="glad.c" />
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="engine.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
