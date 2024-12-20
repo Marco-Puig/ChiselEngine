@@ -1389,7 +1389,10 @@ void Game::init() {
 
 // Logic that runs once per frame - used for rendering
 void Game::render(const glm::mat4& viewProj) {
-	glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -5.0f))* glm::scale(glm::mat4(1.0f), glm::vec3(1.0f));
+	modelMatrix = 
+		glm::translate(glm::mat4(1.0f), 
+		glm::vec3(0.0f, 0.0f, -5.0f))* glm::scale(glm::mat4(1.0f),
+		glm::vec3(1.0f));
 
 	// Render the models - they can share the same matrix
 	drawModel(rockModel, viewProj, modelMatrix);
@@ -1401,7 +1404,7 @@ void Game::update() {
 
 }
 
-// Logic that runs once at the end of the game - at shutdown
+// Logic that runs once at the end of the game - can also destroy objects at runtime
 void Game::destroy() {
 	cleanupModel(rockModel);
 	cleanupModel(sceneModel);
