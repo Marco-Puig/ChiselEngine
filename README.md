@@ -45,7 +45,7 @@ void Game::update() {
 
 }
 
-// Logic that runs once at the end of the game - can also destroy objects at runtime
+// Logic that runs once at the end of the game - you can also call it in your update() to destroy objects at runtime
 void Game::destroy() {
 	cleanupModel(rockModel);
 	cleanupModel(sceneModel);
