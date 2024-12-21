@@ -102,7 +102,7 @@ GLuint app_ubo; // Uniform Buffer Object for constant data
 GLuint app_vbo; // Vertex Buffer Object
 GLuint app_ebo; // Element Buffer Object (for indices) - NEED FOR OPENGL VERTICES OPTIMIZATION
 
-vector<XrPosef> app_cubes; // Cube positions
+vector<XrPosef> app_controllers; // Controller positions
 
 ///////////////////////////////////////////
 
@@ -189,6 +189,7 @@ struct Model {
 	GLuint textureID; // Add a texture ID
 };
 
+Model controllerModel;
 
 GLuint loadTexture(const string& path);
 Model loadModel(const string& objPath, const string& texturePath);
@@ -301,27 +302,6 @@ void main() {
 )";
 
 ///////////////////////////////////////////
-// Demo Cube Model                       //
-///////////////////////////////////////////
-
-float app_verts[] = {
-	-1,-1,-1, -1,-1,-1, // Bottom verts
-	 1,-1,-1,  1,-1,-1,
-	 1, 1,-1,  1, 1,-1,
-	-1, 1,-1, -1, 1,-1,
-	-1,-1, 1, -1,-1, 1, // Top verts
-	 1,-1, 1,  1,-1, 1,
-	 1, 1, 1,  1, 1, 1,
-	-1, 1, 1, -1, 1, 1,
-};
-
-uint16_t app_inds[] = {
-	1,2,0, 2,3,0, 4,6,5, 7,6,4,
-	6,2,1, 5,6,1, 3,7,4, 0,3,4,
-	4,5,1, 0,4,1, 2,7,3, 2,6,7,
-};
-
-///////////////////////////////////////////
 // SkyBox - Cubemap                      //
 ///////////////////////////////////////////
 
@@ -401,9 +381,8 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 
 	openxr_make_actions();
 	app_init();
-
-	// Load rock model - replace this with a much more scalable model loading system - Prehaps run Game class (Game.init() or Game.Start()) to load all models
 	game.init();
+	controllerModel = loadModel("Resources/VRController.obj", "Resources/htc_vive_controller.jpeg"); // replace with own controller function (setController())
 
 	// Enable depth 
 	glEnable(GL_DEPTH_TEST);
@@ -549,13 +528,13 @@ bool openxr_init(const char* app_name, int64_t swapchain_format) {
 		return false;
 	}
 
-	// Ensure we have a current OpenGL context here
+	// Ensure we have a current OpenGL context here to check if the window did its job
 	if (!wglGetCurrentContext()) {
 		MessageBox(nullptr, _T("No current OpenGL context found\n"), _T("Error"), MB_OK);
 		return false;
 	}
 
-	// Create the session with the OpenGL context
+	// Create the session with the existing OpenGL context for headset rendering
 	XrGraphicsBindingOpenGLWin32KHR graphicsBinding = { XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR };
 	graphicsBinding.hDC = wglGetCurrentDC();
 	graphicsBinding.hGLRC = wglGetCurrentContext();
@@ -576,7 +555,7 @@ bool openxr_init(const char* app_name, int64_t swapchain_format) {
 	ref_space.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
 	xrCreateReferenceSpace(xr_session, &ref_space, &xr_app_space);
 
-	// Query view configuration
+	// View configuration
 	uint32_t view_count = 0;
 	xrEnumerateViewConfigurationViews(xr_instance, xr_system_id, app_config_view, 0, &view_count, nullptr);
 	xr_config_views.resize(view_count, { XR_TYPE_VIEW_CONFIGURATION_VIEW });
@@ -1026,27 +1005,6 @@ void gl_swapchain_destroy(swapchain_t& swapchain) {
 void app_init() {
 	app_shader_program = gl_create_program(vertex_glsl, fragment_glsl);
 
-	// Create VAO/VBO/EBO
-	glGenVertexArrays(1, &app_vao);
-	glGenBuffers(1, &app_vbo);
-	glGenBuffers(1, &app_ebo);
-
-	glBindVertexArray(app_vao);
-
-	glBindBuffer(GL_ARRAY_BUFFER, app_vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(app_verts), app_verts, GL_STATIC_DRAW);
-
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, app_ebo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(app_inds), app_inds, GL_STATIC_DRAW);
-
-	// Position attribute
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-	// Normal attribute
-	glEnableVertexAttribArray(1);
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-
-	glBindVertexArray(0);
 
 	// Create a UBO for transform data
 	glGenBuffers(1, &app_uniform_buffer);
@@ -1092,8 +1050,6 @@ void app_init() {
 	};
 	cubemapTexture = loadCubemap(faces);
 
-	cube_shader_program = gl_create_program(cube_vertex_glsl, cube_fragment_glsl);
-
 	glBindVertexArray(0);
 }
 
@@ -1138,18 +1094,18 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 
 	glBindVertexArray(app_vao);
 
-	for (size_t i = 0; i < app_cubes.size(); i++) {
-		glm::quat cube_orientation(app_cubes[i].orientation.w, app_cubes[i].orientation.x,
-			app_cubes[i].orientation.y, app_cubes[i].orientation.z);
-		glm::vec3 cube_pos(app_cubes[i].position.x, app_cubes[i].position.y, app_cubes[i].position.z);
+	for (size_t i = 0; i < 2; i++) {
+		glm::quat controller_orientation(app_controllers[i].orientation.w, app_controllers[i].orientation.x,
+			app_controllers[i].orientation.y, app_controllers[i].orientation.z);
+		glm::vec3 controller_pos(app_controllers[i].position.x, app_controllers[i].position.y, app_controllers[i].position.z);
 
-		glm::mat4 mat_model = glm::translate(glm::mat4(1.0f), cube_pos) * glm::mat4_cast(cube_orientation) * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f));
+		glm::mat4 mat_model = glm::translate(glm::mat4(1.0f), controller_pos) * glm::mat4_cast(controller_orientation) * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f));
 		transform_buffer.world = mat_model;
 
-		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(app_transform_buffer_t), &transform_buffer);
-		glDrawElements(GL_TRIANGLES, (GLsizei)(sizeof(app_inds) / sizeof(app_inds[0])), GL_UNSIGNED_SHORT, 0);
+		drawModel(controllerModel, transform_buffer.viewproj, mat_model);
 	}
 
+	// game.controllerModel(transform_buffer.world);
 	glUseProgram(app_shader_program);
 
 	// Render models in the game logic
@@ -1166,7 +1122,7 @@ void app_update() {
 	// If the user presses the select action, lets add a cube at that location!
 	for (uint32_t i = 0; i < 2; i++) {
 		if (xr_input.handSelect[i])
-			app_cubes.push_back(xr_input.handPose[i]);
+			app_controllers.push_back(xr_input.handPose[i]);
 	}
 	game.update();
 }
@@ -1177,10 +1133,10 @@ void app_update() {
 void app_update_predicted() {
 	// Update the location of the hand cubes. This is done after the inputs have been updated to 
 	// use the predicted location, but during the render code, so we have the most up-to-date location.
-	if (app_cubes.size() < 2)
-		app_cubes.resize(2, xr_pose_identity);
+	if (app_controllers.size() < 2)
+		app_controllers.resize(2, xr_pose_identity);
 	for (uint32_t i = 0; i < 2; i++) {
-		app_cubes[i] = xr_input.renderHand[i] ? xr_input.handPose[i] : xr_pose_identity;
+		app_controllers[i] = xr_input.renderHand[i] ? xr_input.handPose[i] : xr_pose_identity;
 	}
 }
 
@@ -1279,10 +1235,7 @@ Model loadModel(const std::string& objPath, const std::string& texturePath = "")
 	}
 
 	// Load texture if provided
-	GLuint textureID;
-	if (!texturePath.empty()) {
-		textureID = loadTexture(texturePath);
-	}
+	GLuint textureID = !texturePath.empty() ? loadTexture(texturePath) : 0;
 
 	// Generate VAO, VBO, and EBO
 	GLuint vao, vbo, ebo;
@@ -1383,7 +1336,7 @@ glm::mat4 modelMatrix; // transform, rotate, scale - model matrix
 
 // Logic that runs once at the start of the game and used for initialization/declarations
 void Game::init() {
-	rockModel = loadModel("Resources/rock_for_david19k.obj", "Resources/rock_texture.jpeg");
+	rockModel = loadModel("Resources/rock.obj", "Resources/rock_texture.jpeg");
 	sceneModel = loadModel("Resources/SANDnSTONE_simplified.obj", "Resources/SANDnSTONE_simplified.jpeg");
 }
 
@@ -1408,4 +1361,5 @@ void Game::update() {
 void Game::destroy() {
 	cleanupModel(rockModel);
 	cleanupModel(sceneModel);
+	cleanupModel(controllerModel);
 }
