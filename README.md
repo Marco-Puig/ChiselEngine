@@ -52,7 +52,7 @@ void Game::destroy() {
 	cleanupModel(sceneModel);
 }
 ```
-<img width="573" alt="Screenshot 2024-12-16 233921" src="https://github.com/user-attachments/assets/de5c6c8d-4527-48e8-b493-6c9620fb4ea3" />
+<img width="574" alt="Screenshot 2024-12-20 212619" src="https://github.com/user-attachments/assets/1571482e-8adf-43cb-a148-b198c25e78cd" />
 
 
 
