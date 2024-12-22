@@ -91,7 +91,6 @@ XrViewConfigurationType app_config_view = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STE
 ///////////////////////////////////////////
 
 GLuint app_shader_program = 0;
-GLuint cube_shader_program = 0;
 GLuint app_uniform_buffer = 0;
 
 GLuint app_vao; // VAO (Vertex Array Object) for input layout
@@ -1078,9 +1077,6 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 	glUseProgram(0);
 
 	glDepthFunc(GL_LESS); // Reset to default depth func
-
-	// DRAW CUBES 
-	glUseProgram(cube_shader_program);
 
 	// Update the uniform buffer with viewproj and world
 	// We'll draw each cube individually, updating the world matrix each time.
