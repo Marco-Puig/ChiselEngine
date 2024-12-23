@@ -23,33 +23,26 @@ Texture rockTexture, sceneTexture; // Their respective textures
 glm::mat4 modelMatrix; // transform, rotate, scale - model matrix
 
 // Logic that runs once at the start of the game and used for initialization/declarations
-void Game::init() {
+void Game::start() {
 	rockModel = loadModel("Resources/rock.obj", "Resources/rock_texture.jpeg");
-	sceneModel = loadModel("Resources/zen_garden.obj", "Resources/zen_garden_texture.jpeg");
+	sceneModel = loadModel("Resources/SANDnSTONE_simplified.obj", "Resources/SANDnSTONE_simplified.jpeg");
+}
+
+// Logic that runs once per frame - used for game logic
+void Game::update() {
+	
 }
 
 // Logic that runs once per frame - used for rendering
-void Game::render(const glm::mat4& viewProj) {
-	// How you can adjust your models in world space (location, rotation, size)
+void Game::render() {
 	modelMatrix = 
 		glm::translate(glm::mat4(1.0f), 
 		glm::vec3(0.0f, 0.0f, -5.0f))* glm::scale(glm::mat4(1.0f),
 		glm::vec3(1.0f));
 
 	// Render the models - they can share the same matrix
-	drawModel(rockModel, viewProj, modelMatrix);
-	drawModel(sceneModel, viewProj, modelMatrix);
-}
-
-// Logic that updates per frame - used for game logic
-void Game::update() {
-
-}
-
-// Logic that runs once at the end of the game - you can also call it in your update() to destroy objects at runtime
-void Game::destroy() {
-	cleanupModel(rockModel);
-	cleanupModel(sceneModel);
+	drawModel(rockModel, modelMatrix);
+	drawModel(sceneModel, modelMatrix);
 }
 ```
 <img width="574" alt="Screenshot 2024-12-20 212619" src="https://github.com/user-attachments/assets/1571482e-8adf-43cb-a148-b198c25e78cd" />
