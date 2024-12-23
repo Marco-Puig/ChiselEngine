@@ -188,12 +188,25 @@ struct Model {
 	GLuint textureID; // Add a texture ID
 };
 
+struct Transform {
+	glm::vec3 position;
+	glm::quat rotation;
+	glm::vec3 scale;
+};
+
+Transform defaultTransform;
+
 Model controllerModel;
 
 GLuint loadTexture(const string& path);
 Model loadModel(const string& objPath, const string& texturePath);
-void drawModel(const Model& model, const glm::mat4& modelMatrix);
+void drawModel(const Model& model, const Transform modelTransform);
 void cleanupModel(const Model& model);
+
+///////////////////////////////////////////
+
+glm::mat4 transformToMat4(const Transform& transform);
+Transform mat4ToTransform(const glm::mat4& mat);
 
 ///////////////////////////////////////////
 
@@ -1096,11 +1109,13 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 		glm::mat4 mat_model = glm::translate(glm::mat4(1.0f), controller_pos) * glm::mat4_cast(controller_orientation) * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f));
 		transform_buffer.world = mat_model;
 
-		drawModel(controllerModel, mat_model);
+		drawModel(controllerModel, mat4ToTransform(mat_model));
 	}
-
-	// game.controllerModel(transform_buffer.world);
+	
 	glUseProgram(app_shader_program);
+
+	// Set a default transform
+	defaultTransform = mat4ToTransform(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -5.0f)) * glm::scale(glm::mat4(1.0f), glm::vec3(1.0f)));
 
 	// Render models in the game logic
 	game.render();
@@ -1288,10 +1303,45 @@ GLuint loadTexture(const string& path) {
 	return textureID;
 }
 
-///////////////////////////////////////////
+glm::mat4 transformToMat4(const Transform& transform) {
+	glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), transform.position);
+	glm::mat4 rotationMatrix = glm::mat4_cast(transform.rotation);
+	glm::mat4 scaleMatrix = glm::scale(glm::mat4(1.0f), transform.scale);
 
-void drawModel(const Model& model, const glm::mat4& modelMatrix) {
+	return translationMatrix * rotationMatrix * scaleMatrix;
+}
+
+Transform mat4ToTransform(const glm::mat4& mat) {
+	Transform transform;
+
+	// Extract translation
+	transform.position = glm::vec3(mat[3]);
+
+	// Extract scale by calculating the length of the basis vectors
+	transform.scale = glm::vec3(
+		glm::length(glm::vec3(mat[0])),
+		glm::length(glm::vec3(mat[1])),
+		glm::length(glm::vec3(mat[2]))
+	);
+
+	// Remove scale from the matrix to extract the rotation
+	glm::mat4 rotationMatrix = mat;
+	rotationMatrix[0] /= transform.scale.x;
+	rotationMatrix[1] /= transform.scale.y;
+	rotationMatrix[2] /= transform.scale.z;
+
+	transform.rotation = glm::quat_cast(rotationMatrix);
+
+	return transform;
+}
+
+
+
+void drawModel(const Model& model, const Transform modelTransform = defaultTransform) {
 	glUseProgram(app_shader_program);
+	
+	// Convert Transform to a matrix
+	glm::mat4 modelMatrix = transformToMat4(modelTransform);
 
 	// Update transformation matrices
 	app_transform_buffer_t modelTransformBuffer;
@@ -1326,27 +1376,19 @@ void cleanupModel(const Model& model) {
 
 Model rockModel, sceneModel; // Models
 Texture rockTexture, sceneTexture; // Their respective textures
-glm::mat4 modelMatrix; // transform, rotate, scale - model matrix
 
 // Logic that runs once at the start of the game and used for initialization/declarations
 void Game::start() {
 	rockModel = loadModel("Resources/rock.obj", "Resources/rock_texture.jpeg");
-	sceneModel = loadModel("Resources/SANDnSTONE_simplified.obj", "Resources/SANDnSTONE_simplified.jpeg");
+	sceneModel = loadModel("Resources/zen_garden.obj", "Resources/zen_garden_texture.jpeg");
 }
 
 // Logic that runs once per frame - used for game logic
 void Game::update() {
-	
 }
 
 // Logic that runs once per frame - used for rendering
 void Game::render() {
-	modelMatrix = 
-		glm::translate(glm::mat4(1.0f), 
-		glm::vec3(0.0f, 0.0f, -5.0f))* glm::scale(glm::mat4(1.0f),
-		glm::vec3(1.0f));
-
-	// Render the models - they can share the same matrix
-	drawModel(rockModel, modelMatrix);
-	drawModel(sceneModel, modelMatrix);
+	drawModel(rockModel);
+	drawModel(sceneModel);
 }
