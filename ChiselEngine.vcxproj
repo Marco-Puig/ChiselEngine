@@ -171,10 +171,11 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="game.cpp" />
     <ClCompile Include="glad.c" />
-    <ClCompile Include="engine.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Core/engine.cpp" />
     <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
