@@ -37,7 +37,7 @@ void Game::update() {
 // Logic that runs once per frame - used for rendering
 void Game::render() {
 	drawModel(rockModel, rockTransform);
-	drawModel(sceneModel); // if you don't provide a transform, it will use the the default transform
+	drawModel(sceneModel); // use default transform if no transform is provided
 }
 ```
 <img width="574" alt="Screenshot 2024-12-20 212619" src="https://github.com/user-attachments/assets/1571482e-8adf-43cb-a148-b198c25e78cd" />
