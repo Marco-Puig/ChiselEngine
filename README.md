@@ -20,7 +20,7 @@ Before running, make sure you have an instance of OpenXR running along with a co
 ```C++
 Model rockModel, sceneModel; // Models
 Texture rockTexture, sceneTexture; // Their respective textures
-glm::mat4 modelMatrix; // transform, rotate, scale - model matrix
+Transform rockTransform; // transform, rotate, scale - model matrix
 
 // Logic that runs once at the start of the game and used for initialization/declarations
 void Game::start() {
@@ -30,19 +30,15 @@ void Game::start() {
 
 // Logic that runs once per frame - used for game logic
 void Game::update() {
-	
+	// For example: we can have the rock move forward in the z-axis by .01 each frame
+	rockTransform.position += glm::vec3(0.0f, 0.0f, 0.01f);
 }
 
 // Logic that runs once per frame - used for rendering
 void Game::render() {
-	modelMatrix = 
-		glm::translate(glm::mat4(1.0f), 
-		glm::vec3(0.0f, 0.0f, -5.0f))* glm::scale(glm::mat4(1.0f),
-		glm::vec3(1.0f));
-
 	// Render the models - they can share the same matrix
-	drawModel(rockModel, modelMatrix);
-	drawModel(sceneModel, modelMatrix);
+	drawModel(rockModel, rockTransform);
+	drawModel(sceneModel); // if you don't provide a transform, it will use the the default transform
 }
 ```
 <img width="574" alt="Screenshot 2024-12-20 212619" src="https://github.com/user-attachments/assets/1571482e-8adf-43cb-a148-b198c25e78cd" />
