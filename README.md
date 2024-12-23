@@ -4,7 +4,7 @@ Chisel Engine is a game engine built on OpenXR and OpenGL, designed for developi
 ## Instructions 
 Since this is project is working of a Solution (.sln) file, I recommend to use Visual Studio 2022
 
-Ensure you have the C++ Development Package Installed (You will be shown these as option in the Visual Studio Installer)
+Ensure you have the C++ Development Package Installed (You will be shown this as option in the Visual Studio Installer)
 
 Additionally, you will need to use your own **OBJ** file(s) in the Resources folder.\
 For example: `Resources/rock.obj`
