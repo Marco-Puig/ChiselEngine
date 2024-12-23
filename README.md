@@ -4,7 +4,7 @@ Chisel Engine is a game engine built on OpenXR and OpenGL, designed for developi
 ## Instructions 
 Since this is project is working of a Solution (.sln) file, I recommend to use Visual Studio 2022
 
-Ensure you have the C++ Development Package Installed (You will be shown these as option in the Visual Studio Installer)
+Ensure you have the C++ Development Package Installed (You will be shown this as option in the Visual Studio Installer)
 
 Additionally, you will need to use your own **OBJ** file(s) in the Resources folder.\
 For example: `Resources/rock.obj`
@@ -20,29 +20,24 @@ Before running, make sure you have an instance of OpenXR running along with a co
 ```C++
 Model rockModel, sceneModel; // Models
 Texture rockTexture, sceneTexture; // Their respective textures
-glm::mat4 modelMatrix; // transform, rotate, scale - model matrix
+Transform rockTransform; // transform (position, rotation, scale)
 
 // Logic that runs once at the start of the game and used for initialization/declarations
 void Game::start() {
 	rockModel = loadModel("Resources/rock.obj", "Resources/rock_texture.jpeg");
-	sceneModel = loadModel("Resources/SANDnSTONE_simplified.obj", "Resources/SANDnSTONE_simplified.jpeg");
+	sceneModel = loadModel("Resources/zen_garden.obj", "Resources/zen_garden_texture.jpeg");
 }
 
 // Logic that runs once per frame - used for game logic
 void Game::update() {
-	
+	// For example: we can have the rock move forward in the z-axis by .01 each frame
+	rockTransform.position += glm::vec3(0.0f, 0.0f, 0.01f);
 }
 
 // Logic that runs once per frame - used for rendering
 void Game::render() {
-	modelMatrix = 
-		glm::translate(glm::mat4(1.0f), 
-		glm::vec3(0.0f, 0.0f, -5.0f))* glm::scale(glm::mat4(1.0f),
-		glm::vec3(1.0f));
-
-	// Render the models - they can share the same matrix
-	drawModel(rockModel, modelMatrix);
-	drawModel(sceneModel, modelMatrix);
+	drawModel(rockModel, rockTransform);
+	drawModel(sceneModel); // use default transform if no transform is provided
 }
 ```
 <img width="574" alt="Screenshot 2024-12-20 212619" src="https://github.com/user-attachments/assets/1571482e-8adf-43cb-a148-b198c25e78cd" />
