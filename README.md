@@ -20,7 +20,7 @@ Before running, make sure you have an instance of OpenXR running along with a co
 ```C++
 Model rockModel, sceneModel; // Models
 Texture rockTexture, sceneTexture; // Their respective textures
-Transform rockTransform; // transform, rotate, scale - model matrix
+Transform rockTransform; // transform (position, rotation, scale)
 
 // Logic that runs once at the start of the game and used for initialization/declarations
 void Game::start() {
