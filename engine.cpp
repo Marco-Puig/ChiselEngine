@@ -85,6 +85,8 @@ struct app_transform_buffer_t {
 	glm::mat4 viewproj;
 };
 
+app_transform_buffer_t transform_buffer;
+
 XrFormFactor            app_config_form = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
 XrViewConfigurationType app_config_view = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
 
@@ -190,17 +192,16 @@ Model controllerModel;
 
 GLuint loadTexture(const string& path);
 Model loadModel(const string& objPath, const string& texturePath);
-void drawModel(const Model& model, const glm::mat4& viewProj, const glm::mat4& modelMatrix);
+void drawModel(const Model& model, const glm::mat4& modelMatrix);
 void cleanupModel(const Model& model);
 
 ///////////////////////////////////////////
 
 class Game {
 public:
-	void init();
+	void start();
 	void update();
-	void render(const glm::mat4& viewProj);
-	void destroy();
+	void render();
 };
 
 Game game;
@@ -378,7 +379,7 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 
 	openxr_make_actions();
 	app_init();
-	game.init();
+	game.start();
 	controllerModel = loadModel("Resources/VRController.obj", "Resources/htc_vive_controller.jpeg"); // replace with own controller function (setController())
 
 	// Enable depth 
@@ -417,7 +418,6 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 		}
 	}
 
-	game.destroy();
 	openxr_shutdown();
 	opengl_shutdown();
 
@@ -691,6 +691,7 @@ void openxr_shutdown() {
 }
 
 void opengl_shutdown() {
+	// Cleanup the OpenGL resources we've created
 	glfwDestroyWindow(window);
 	glfwTerminate();
 }
@@ -1080,8 +1081,7 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 
 	// Update the uniform buffer with viewproj and world
 	// We'll draw each cube individually, updating the world matrix each time.
-	
-	app_transform_buffer_t transform_buffer;
+
 	transform_buffer.viewproj = mat_projection * mat_view;
 	
 	glBindBuffer(GL_UNIFORM_BUFFER, app_uniform_buffer);
@@ -1096,14 +1096,14 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 		glm::mat4 mat_model = glm::translate(glm::mat4(1.0f), controller_pos) * glm::mat4_cast(controller_orientation) * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f));
 		transform_buffer.world = mat_model;
 
-		drawModel(controllerModel, transform_buffer.viewproj, mat_model);
+		drawModel(controllerModel, mat_model);
 	}
 
 	// game.controllerModel(transform_buffer.world);
 	glUseProgram(app_shader_program);
 
 	// Render models in the game logic
-	game.render(transform_buffer.viewproj);
+	game.render();
 
 	glBindVertexArray(0);
 	glUseProgram(0);
@@ -1290,16 +1290,16 @@ GLuint loadTexture(const string& path) {
 
 ///////////////////////////////////////////
 
-void drawModel(const Model& model, const glm::mat4& viewProj, const glm::mat4& modelMatrix) {
+void drawModel(const Model& model, const glm::mat4& modelMatrix) {
 	glUseProgram(app_shader_program);
 
 	// Update transformation matrices
-	app_transform_buffer_t transformBuffer;
-	transformBuffer.viewproj = viewProj;
-	transformBuffer.world = modelMatrix;
+	app_transform_buffer_t modelTransformBuffer;
+	modelTransformBuffer.viewproj = transform_buffer.viewproj;
+	modelTransformBuffer.world = modelMatrix;
 
 	glBindBuffer(GL_UNIFORM_BUFFER, app_uniform_buffer);
-	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(app_transform_buffer_t), &transformBuffer);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(app_transform_buffer_t), &modelTransformBuffer);
 
 	// Bind the model's texture
 	glActiveTexture(GL_TEXTURE0);
@@ -1329,21 +1329,9 @@ Texture rockTexture, sceneTexture; // Their respective textures
 glm::mat4 modelMatrix; // transform, rotate, scale - model matrix
 
 // Logic that runs once at the start of the game and used for initialization/declarations
-void Game::init() {
+void Game::start() {
 	rockModel = loadModel("Resources/rock.obj", "Resources/rock_texture.jpeg");
 	sceneModel = loadModel("Resources/SANDnSTONE_simplified.obj", "Resources/SANDnSTONE_simplified.jpeg");
-}
-
-// Logic that runs once per frame - used for rendering
-void Game::render(const glm::mat4& viewProj) {
-	modelMatrix = 
-		glm::translate(glm::mat4(1.0f), 
-		glm::vec3(0.0f, 0.0f, -5.0f))* glm::scale(glm::mat4(1.0f),
-		glm::vec3(1.0f));
-
-	// Render the models - they can share the same matrix
-	drawModel(rockModel, viewProj, modelMatrix);
-	drawModel(sceneModel, viewProj, modelMatrix);
 }
 
 // Logic that updates per frame - used for game logic
@@ -1351,9 +1339,14 @@ void Game::update() {
 
 }
 
-// Logic that runs once at the end of the game - can also destroy objects at runtime
-void Game::destroy() {
-	cleanupModel(rockModel);
-	cleanupModel(sceneModel);
-	cleanupModel(controllerModel);
+// Logic that runs once per frame - used for rendering
+void Game::render() {
+	modelMatrix = 
+		glm::translate(glm::mat4(1.0f), 
+		glm::vec3(0.0f, 0.0f, -5.0f))* glm::scale(glm::mat4(1.0f),
+		glm::vec3(1.0f));
+
+	// Render the models - they can share the same matrix
+	drawModel(rockModel, modelMatrix);
+	drawModel(sceneModel, modelMatrix);
 }
