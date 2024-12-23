@@ -36,7 +36,6 @@ void Game::update() {
 
 // Logic that runs once per frame - used for rendering
 void Game::render() {
-	// Render the models - they can share the same matrix
 	drawModel(rockModel, rockTransform);
 	drawModel(sceneModel); // if you don't provide a transform, it will use the the default transform
 }
