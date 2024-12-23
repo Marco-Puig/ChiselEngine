@@ -1334,9 +1334,9 @@ void Game::start() {
 	sceneModel = loadModel("Resources/SANDnSTONE_simplified.obj", "Resources/SANDnSTONE_simplified.jpeg");
 }
 
-// Logic that updates per frame - used for game logic
+// Logic that runs once per frame - used for game logic
 void Game::update() {
-
+	
 }
 
 // Logic that runs once per frame - used for rendering
