@@ -2,7 +2,7 @@
 Chisel Engine is a game engine built on OpenXR and OpenGL, designed for developing immersive VR applications.
 
 ## Instructions 
-Since this is project is working of a Solution (.sln) file, I recommend to use Visual Studio 2022
+Since this project is working off a Solution (.sln) file, I recommend to use Visual Studio 2022
 
 Ensure you have the C++ Development Package Installed (You will be shown this as option in the Visual Studio Installer)
 
