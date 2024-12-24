@@ -172,7 +172,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="game.cpp" />
-    <ClCompile Include="glad.c" />
+    <ClCompile Include="Core/glad.c" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Core/engine.cpp" />
