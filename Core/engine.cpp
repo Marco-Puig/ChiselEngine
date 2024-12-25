@@ -121,9 +121,9 @@ swapchain_surfdata_t gl_make_surface_data(XrBaseInStructure& swapchain_img, int3
 
 ///////////////////////////////////////////
 
-double prevTime = 0.0;
-double crntTime = 0.0;
-double timeDiff;
+double priorTime = 0.0;
+double currentTime = 0.0;
+double timeDifference;
 unsigned int counter = 0;
 void calculate_framerate();
 
@@ -1056,6 +1056,7 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 
 	glBindVertexArray(app_vao);
 
+	// for each of the two controllers
 	for (size_t i = 0; i < 2; i++) {
 		glm::quat controller_orientation(app_controllers[i].orientation.w, app_controllers[i].orientation.x,
 			app_controllers[i].orientation.y, app_controllers[i].orientation.z);
@@ -1084,11 +1085,16 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 // If user hits trigger, spawn a cube at the hand's location
 void app_update() {
 	// If the user presses the select action, lets add a cube at that location!
-	for (uint32_t i = 0; i < 2; i++) {
-		if (xr_input.handSelect[i])
-			app_controllers.push_back(xr_input.handPose[i]);
-	}
 	game.update();
+}
+
+bool inputDetected() {
+	for (uint32_t i = 0; i < 2; i++) {
+		if (xr_input.handSelect[i]) { 
+			return true;
+		}
+	}
+	return false;
 }
 
 ///////////////////////////////////////////
@@ -1108,19 +1114,19 @@ void app_update_predicted() {
 
 void calculate_framerate() {
 	// Update the time and counter
-	crntTime = glfwGetTime();
-	timeDiff = crntTime - prevTime;
+	currentTime = glfwGetTime();
+	timeDifference = currentTime - priorTime;
 	counter++;
 
-	if (timeDiff >= 1.0 / 30.0)
+	if (timeDifference >= 1.0 / 30.0)
 	{
 		// Update the window title
-		string FPS = std::to_string(static_cast<int>(((1.0 / timeDiff) * counter)));
+		string FPS = std::to_string(static_cast<int>(((1.0 / timeDifference) * counter)));
 		string newTitle = "Chisel Engine - OpenGL 4.3 - " + FPS + "FPS";
 		glfwSetWindowTitle(window, newTitle.c_str());
 
 		// Lastly, reset the time and counter
-		prevTime = crntTime;
+		priorTime = currentTime;
 		counter = 0;
 	}
 }
