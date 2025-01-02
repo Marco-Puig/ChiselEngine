@@ -42,8 +42,10 @@ void Game::render() {
 ```
 <img width="574" alt="Screenshot 2024-12-20 212619" src="https://github.com/user-attachments/assets/1571482e-8adf-43cb-a148-b198c25e78cd" />
 
-
-
+## Special Thanks and Credits
+OpenGL: https://learnopengl.com/ \
+SFML: https://www.sfml-dev.org/ \
+OpenXR: https://github.com/maluoi
 
 
 
