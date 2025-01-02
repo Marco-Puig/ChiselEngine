@@ -176,36 +176,17 @@ Game game;
 
 ///////////////////////////////////////////
 
-const char* cube_vertex_glsl = R"(
-#version 450 core
-layout (location = 0) in vec3 in_pos;
-layout (location = 1) in vec3 in_norm;
-
-layout(std140) uniform TransformBuffer {
-    mat4 world;
-    mat4 viewproj;
+class Audio {
+private:
+	sf::SoundBuffer buffer;
+	sf::Sound sound;
+public:
+	void playAudio(const string& path);
+	void stopAudio();
+	void setVolume(float volume);
 };
 
-out vec3 vColor;
-
-void main() {
-    vec4 worldPos = world * vec4(in_pos,1.0);
-    gl_Position = viewproj * worldPos;
-
-    vec3 normal = normalize((world * vec4(in_norm,0.0)).xyz);
-    vColor = max(dot(normal, vec3(0,1,0)), 0.0) * vec3(1.0,1.0,1.0);
-}
-)";
-
-const char* cube_fragment_glsl = R"(
-#version 450 core
-in vec3 vColor;
-out vec4 fragColor;
-
-void main() {
-    fragColor = vec4(vColor,1.0);
-}
-)";
+///////////////////////////////////////////
 
 const char* vertex_glsl = R"(
 #version 450 core
@@ -310,7 +291,7 @@ unsigned int skyboxIndices[] =
 // Main                                  //
 ///////////////////////////////////////////
 
-int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
+int main() {
 	// Initialize GLFW (creates the window and OpenGL context)
 	if (!glfwInit()) {
 		MessageBox(nullptr, _T("GLFW initialization failed\n"), _T("Error"), MB_OK);
@@ -338,12 +319,19 @@ int __stdcall wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 		return 1;
 	}
 
+	// Check if openxr_init() fails
 	if (!openxr_init("Single file OpenXR", OPENGL_SWAPCHAIN_FORMAT)) {
 		MessageBox(nullptr, _T("OpenXR initialization failed\n"), _T("Error"), MB_OK);
 		glfwDestroyWindow(window);
 		glfwTerminate();
 		return 1;
 	}
+
+	// show gpu and opengl info
+	const GLubyte* renderer = glGetString(GL_RENDERER);
+	const GLubyte* version = glGetString(GL_VERSION);
+	printf("GPU: %s\n", renderer);
+	printf("OpenGL Version: %s\n", version);
 
 	openxr_make_actions();
 	app_init();
@@ -1082,9 +1070,8 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 
 ///////////////////////////////////////////
 
-// If user hits trigger, spawn a cube at the hand's location
 void app_update() {
-	// If the user presses the select action, lets add a cube at that location!
+	// run update logic for the game class
 	game.update();
 }
 
@@ -1174,7 +1161,7 @@ Model loadModel(const std::string& objPath, const std::string& texturePath = "")
 		aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenNormals);
 
 	if (!scene || !scene->HasMeshes()) {
-		std::cerr << "Error loading model: " << importer.GetErrorString() << std::endl;
+		//Error loading model => exit
 		exit(EXIT_FAILURE);
 	}
 
@@ -1330,5 +1317,26 @@ void cleanupModel(const Model& model) {
 	glDeleteBuffers(1, &model.vbo);
 	glDeleteBuffers(1, &model.ebo);
 	glDeleteVertexArrays(1, &model.vao);
+}
+
+///////////////////////////////////////////
+
+void Audio::playAudio(const string& audioPath) {
+	// Load audio file
+	if (!buffer.loadFromFile(audioPath)) {
+		MessageBox(nullptr, _T("Failed to load audio file"), _T("Error"), MB_OK);
+	}
+	// Play audio
+	sound.setBuffer(buffer);
+	sound.play();
+}
+
+void Audio::stopAudio() {
+	// Stop audio
+	sound.stop();
+}
+
+void Audio::setVolume(float volume) {
+	sound.setVolume(volume);
 }
 

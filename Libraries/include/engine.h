@@ -43,4 +43,7 @@
 #include <map> // key-value pairs
 #include <string> // string manipulation
 
+// Audio and sound lib from SFML Audio Module
+#include <SFML/Audio.hpp>
+
 using namespace std; // standard - std lib
