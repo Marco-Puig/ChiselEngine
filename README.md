@@ -16,7 +16,7 @@ Before running, make sure you have an instance of OpenXR running along with a co
 - Controller detection and input support
 - Game Logic Component (No need to work with the Engine to start creating your Game)
 
-## Getting Started
+## Getting Started - Game.cpp
 ```C++
 Model rockModel, sceneModel; // Models
 Texture rockTexture, sceneTexture; // Their respective textures
