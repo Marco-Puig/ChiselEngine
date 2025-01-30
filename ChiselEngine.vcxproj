@@ -182,6 +182,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Core/engine.cpp" />
+    <None Include="Core/gameobject.cpp" />
+    <None Include="Core/audio.cpp" />
     <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -6,8 +6,8 @@ Audio testSound;
 
 // Logic that runs once at the start of the game and used for initialization/declarations
 void Game::start() {
-	rockModel = loadModel("Resources/rock.obj", "Resources/rock_texture.jpeg");
-	sceneModel = loadModel("Resources/zen_garden.obj", "Resources/zen_garden_texture.jpeg");
+	rockModel.loadModel("Resources/rock.obj", "Resources/rock_texture.jpeg");
+	sceneModel.loadModel("Resources/zen_garden.obj", "Resources/zen_garden_texture.jpeg");
 	testSound.playAudio("Resources/test_sound.wav"); // assign audio file and play it (can use setVolume() to adjust volume)
 }
 
@@ -20,6 +20,6 @@ void Game::update() {
 
 // Logic that runs once per frame - used for rendering
 void Game::render() {
-	drawModel(rockModel);
-	drawModel(sceneModel);
+	rockModel.drawModel();
+	sceneModel.drawModel();
 }

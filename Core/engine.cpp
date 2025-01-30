@@ -1,192 +1,5 @@
-#include <engine.h>
-
-///////////////////////////////////////////
-
-struct swapchain_surfdata_t {
-	GLuint fbo;
-	GLuint depthbuffer;
-};
-
-struct swapchain_t {
-	XrSwapchain handle;
-	int32_t width;
-	int32_t height;
-	std::vector<XrSwapchainImageOpenGLKHR> surface_images;
-	std::vector<swapchain_surfdata_t>      surface_data;
-};
-
-struct input_state_t {
-	XrActionSet actionSet;
-	XrAction    poseAction;
-	XrAction    selectAction;
-	XrPath   handSubactionPath[2];
-	XrSpace  handSpace[2];
-	XrPosef  handPose[2];
-	XrBool32 renderHand[2];
-	XrBool32 handSelect[2];
-};
-
-///////////////////////////////////////////
-
-// Function pointers for some OpenXR extension methods we'll use.
-PFN_xrGetOpenGLGraphicsRequirementsKHR ext_xrGetOpenGLGraphicsRequirementsKHR = nullptr;
-PFN_xrCreateDebugUtilsMessengerEXT    ext_xrCreateDebugUtilsMessengerEXT = nullptr;
-PFN_xrDestroyDebugUtilsMessengerEXT   ext_xrDestroyDebugUtilsMessengerEXT = nullptr;
-
-///////////////////////////////////////////
-
-struct app_transform_buffer_t {
-	glm::mat4 world;
-	glm::mat4 viewproj;
-};
-
-app_transform_buffer_t transform_buffer;
-
-XrFormFactor            app_config_form = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
-XrViewConfigurationType app_config_view = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
-
-///////////////////////////////////////////
-
-GLuint app_shader_program = 0;
-GLuint app_uniform_buffer = 0;
-
-GLuint app_vao; // VAO (Vertex Array Object) for input layout
-
-GLuint app_ubo; // Uniform Buffer Object for constant data
-GLuint app_vbo; // Vertex Buffer Object
-GLuint app_ebo; // Element Buffer Object (for indices) - NEED FOR OPENGL VERTICES OPTIMIZATION
-
-vector<XrPosef> app_controllers; // Controller positions
-
-///////////////////////////////////////////
-
-GLuint skyboxShaderProgram = 0;
-GLuint skyboxVAO;
-GLuint skyboxVBO;
-GLuint skyboxEBO;
-GLuint cubemapTexture = 0;
-GLuint loadCubemap(vector<string> faces);
-
-HWND g_hWnd = nullptr; // Window handle
-
-GLFWwindow* window; // Assume we have a valid GLFWwindow*
-int desktopWidth = 1160;
-int desktopHeight = 1100;
-
-///////////////////////////////////////////
-
-uint32_t leftEyeImageIndex; // Set during xrAcquireSwapchainImage calls for left eye
-int left_eye_index = 0; // left eye at index 0
-extern std::vector<swapchain_t> xr_swapchains;
-extern GLFWwindow* window;
-extern int desktopWidth, desktopHeight;
-
-///////////////////////////////////////////
-
-void app_init();
-void app_draw(XrCompositionLayerProjectionView& layerView);
-void app_update();
-void app_update_predicted();
-void opengl_shutdown();
-
-///////////////////////////////////////////
-
-const XrPosef  xr_pose_identity = { {0,0,0,1}, {0,0,0} };
-XrInstance     xr_instance = {};
-XrSession      xr_session = {};
-XrSessionState xr_session_state = XR_SESSION_STATE_UNKNOWN;
-bool           xr_running = false;
-bool		   quit = false;
-XrSpace        xr_app_space = {};
-XrSystemId     xr_system_id = XR_NULL_SYSTEM_ID;
-input_state_t  xr_input = { };
-XrEnvironmentBlendMode   xr_blend = {};
-XrDebugUtilsMessengerEXT xr_debug = {};
-
-vector<XrView>                  xr_views;
-vector<XrViewConfigurationView> xr_config_views;
-vector<swapchain_t>             xr_swapchains;
-
-bool openxr_init(const char* app_name, int64_t swapchain_format);
-void openxr_make_actions();
-void openxr_shutdown();
-void openxr_poll_events(bool& exit);
-void openxr_poll_actions();
-void openxr_poll_predicted(XrTime predicted_time);
-void openxr_render_frame();
-bool openxr_render_layer(XrTime predictedTime, vector<XrCompositionLayerProjectionView>& projectionViews, XrCompositionLayerProjection& layer);
-void gl_swapchain_destroy(swapchain_t& swapchain);
-void gl_render_layer(XrCompositionLayerProjectionView& view, swapchain_surfdata_t& surface, GLFWwindow* window);
-swapchain_surfdata_t gl_make_surface_data(XrBaseInStructure& swapchain_img, int32_t width, int32_t height);
-
-///////////////////////////////////////////
-
-double priorTime = 0.0;
-double currentTime = 0.0;
-double timeDifference;
-unsigned int counter = 0;
-void calculate_framerate();
-
-///////////////////////////////////////////
-
-struct Texture {
-	GLuint id;
-	string type;
-	string path;
-};
-
-struct Model {
-	GLuint vao;       // Vertex Array Object
-	GLuint vbo;       // Vertex Buffer Object
-	GLuint ebo;       // Element Buffer Object
-	size_t indexCount; // Number of indices
-	GLuint textureID; // Add a texture ID
-};
-
-struct Transform {
-	glm::vec3 position;
-	glm::quat rotation;
-	glm::vec3 scale;
-};
-
-Transform defaultTransform;
-
-Model controllerModel;
-
-GLuint loadTexture(const string& path);
-Model loadModel(const string& objPath, const string& texturePath);
-void drawModel(const Model& model, const Transform modelTransform);
-void cleanupModel(const Model& model);
-
-///////////////////////////////////////////
-
-glm::mat4 transformToMat4(const Transform& transform);
-Transform mat4ToTransform(const glm::mat4& mat);
-
-///////////////////////////////////////////
-
-class Game {
-public:
-	void start();
-	void update();
-	void render();
-};
-
-Game game;
-
-///////////////////////////////////////////
-
-class Audio {
-private:
-	sf::SoundBuffer buffer;
-	sf::Sound sound;
-public:
-	void playAudio(const string& path);
-	void stopAudio();
-	void setVolume(float volume);
-};
-
-///////////////////////////////////////////
+#include "core/gameobject.cpp"
+#include "core/audio.cpp"
 
 const char* vertex_glsl = R"(
 #version 450 core
@@ -248,49 +61,6 @@ void main() {
 }
 )";
 
-///////////////////////////////////////////
-// SkyBox - Cubemap                      //
-///////////////////////////////////////////
-
-float skyboxVertices[] =
-{
-	//   Coordinates
-	-1.0f, -1.0f,  1.0f,//        7--------6
-	 1.0f, -1.0f,  1.0f,//       /|       /|
-	 1.0f, -1.0f, -1.0f,//      4--------5 |
-	-1.0f, -1.0f, -1.0f,//      | |      | |
-	-1.0f,  1.0f,  1.0f,//      | 3------|-2
-	 1.0f,  1.0f,  1.0f,//      |/       |/
-	 1.0f,  1.0f, -1.0f,//      0--------1
-	-1.0f,  1.0f, -1.0f
-};
-
-unsigned int skyboxIndices[] =
-{
-	// Right
-	1, 2, 6,
-	6, 5, 1,
-	// Left
-	0, 4, 7,
-	7, 3, 0,
-	// Top
-	4, 5, 6,
-	6, 7, 4,
-	// Bottom
-	0, 3, 2,
-	2, 1, 0,
-	// Back
-	0, 1, 5,
-	5, 4, 0,
-	// Front
-	3, 7, 6,
-	6, 2, 3
-};
-
-///////////////////////////////////////////
-// Main                                  //
-///////////////////////////////////////////
-
 int main() {
 	// Initialize GLFW (creates the window and OpenGL context)
 	if (!glfwInit()) {
@@ -330,13 +100,12 @@ int main() {
 	// show gpu and opengl info
 	const GLubyte* renderer = glGetString(GL_RENDERER);
 	const GLubyte* version = glGetString(GL_VERSION);
-	printf("GPU: %s\n", renderer);
-	printf("OpenGL Version: %s\n", version);
+	std::cout << "GPU: %s\n" << std::endl;
+	std::cout << "OpenGL Version: %s\n" << std::endl;
 
 	openxr_make_actions();
 	app_init();
 	game.start();
-	controllerModel = loadModel("Resources/VRController.obj", "Resources/htc_vive_controller.jpeg"); // replace with own controller function (setController())
 
 	// Enable depth 
 	glEnable(GL_DEPTH_TEST);
@@ -774,7 +543,7 @@ void openxr_render_frame() {
 	// If the session is active, lets render our layer in the compositor!
 	XrCompositionLayerBaseHeader* layer = nullptr;
 	XrCompositionLayerProjection             layer_proj = { XR_TYPE_COMPOSITION_LAYER_PROJECTION };
-	vector<XrCompositionLayerProjectionView> views;
+	std::vector<XrCompositionLayerProjectionView> views;
 	bool session_active = xr_session_state == XR_SESSION_STATE_VISIBLE || xr_session_state == XR_SESSION_STATE_FOCUSED;
 	if (session_active && openxr_render_layer(frame_state.predictedDisplayTime, views, layer_proj)) {
 		layer = (XrCompositionLayerBaseHeader*)&layer_proj;
@@ -791,7 +560,7 @@ void openxr_render_frame() {
 
 ///////////////////////////////////////////
 
-bool openxr_render_layer(XrTime predictedTime, vector<XrCompositionLayerProjectionView>& views, XrCompositionLayerProjection& layer) {
+bool openxr_render_layer(XrTime predictedTime, std::vector<XrCompositionLayerProjectionView>& views, XrCompositionLayerProjection& layer) {
 
 	// Find the state and location of each viewpoint at the predicted time
 	uint32_t         view_count = 0;
@@ -959,7 +728,6 @@ void gl_swapchain_destroy(swapchain_t& swapchain) {
 void app_init() {
 	app_shader_program = gl_create_program(vertex_glsl, fragment_glsl);
 
-
 	// Create a UBO for transform data
 	glGenBuffers(1, &app_uniform_buffer);
 	glBindBuffer(GL_UNIFORM_BUFFER, app_uniform_buffer);
@@ -993,7 +761,7 @@ void app_init() {
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
 	// Load the cubemap textures
-	vector<string> faces
+	std::vector<std::string> faces
 	{
 		"Resources/right.png",
 		"Resources/left.png",
@@ -1044,6 +812,9 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 
 	glBindVertexArray(app_vao);
 
+	Model controllerModel; // Controller Model - Default are Vive Controllers
+	controllerModel.loadModel("Resources/VRController.obj", "Resources/htc_vive_controller.jpeg"); // replace with own controller function (setController())
+
 	// for each of the two controllers
 	for (size_t i = 0; i < 2; i++) {
 		glm::quat controller_orientation(app_controllers[i].orientation.w, app_controllers[i].orientation.x,
@@ -1053,7 +824,7 @@ void app_draw(XrCompositionLayerProjectionView& view) {
 		glm::mat4 mat_model = glm::translate(glm::mat4(1.0f), controller_pos) * glm::mat4_cast(controller_orientation) * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f));
 		transform_buffer.world = mat_model;
 
-		drawModel(controllerModel, mat4ToTransform(mat_model));
+		controllerModel.drawModel(mat4ToTransform(mat_model)); // draw the controller model at the controller's location and orientation
 	}
 	
 	glUseProgram(app_shader_program);
@@ -1108,8 +879,8 @@ void calculate_framerate() {
 	if (timeDifference >= 1.0 / 30.0)
 	{
 		// Update the window title
-		string FPS = std::to_string(static_cast<int>(((1.0 / timeDifference) * counter)));
-		string newTitle = "Chisel Engine - OpenGL 4.3 - " + FPS + "FPS";
+		std::string FPS = std::to_string(static_cast<int>(((1.0 / timeDifference) * counter)));
+		std::string newTitle = "Chisel Engine - OpenGL 4.3 - " + FPS + "FPS";
 		glfwSetWindowTitle(window, newTitle.c_str());
 
 		// Lastly, reset the time and counter
@@ -1120,7 +891,7 @@ void calculate_framerate() {
 
 ///////////////////////////////////////////
 
-GLuint loadCubemap(vector<string> faces)
+GLuint loadCubemap(std::vector<std::string> faces)
 {
 	GLuint textureID;
 	glGenTextures(1, &textureID);
@@ -1152,191 +923,3 @@ GLuint loadCubemap(vector<string> faces)
 
 	return textureID;
 }
-
-///////////////////////////////////////////
-
-Model loadModel(const std::string& objPath, const std::string& texturePath = "") {
-	Assimp::Importer importer;
-	const aiScene* scene = importer.ReadFile(objPath,
-		aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenNormals);
-
-	if (!scene || !scene->HasMeshes()) {
-		//Error loading model => exit
-		exit(EXIT_FAILURE);
-	}
-
-	aiMesh* mesh = scene->mMeshes[0];
-
-	std::vector<float> vertices;
-	std::vector<uint32_t> indices;
-
-	// Extract vertex data: position (3), normal (3), tex coords (2)
-	for (unsigned int i = 0; i < mesh->mNumVertices; ++i) {
-		aiVector3D pos = mesh->mVertices[i];
-		aiVector3D norm = mesh->HasNormals() ? mesh->mNormals[i] : aiVector3D(0.0f, 0.0f, 0.0f);
-		aiVector3D texCoord = mesh->HasTextureCoords(0) ? mesh->mTextureCoords[0][i] : aiVector3D(0.0f, 0.0f, 0.0f);
-
-		vertices.insert(vertices.end(), {
-			pos.x, pos.y, pos.z,       // Position
-			norm.x, norm.y, norm.z,    // Normal
-			texCoord.x, texCoord.y     // Texture coordinates
-			});
-	}
-
-	// Extract indices
-	for (unsigned int i = 0; i < mesh->mNumFaces; ++i) {
-		aiFace face = mesh->mFaces[i];
-		for (unsigned int j = 0; j < face.mNumIndices; ++j) {
-			indices.push_back(face.mIndices[j]);
-		}
-	}
-
-	// Load texture if provided
-	GLuint textureID = !texturePath.empty() ? loadTexture(texturePath) : 0;
-
-	// Generate VAO, VBO, and EBO
-	GLuint vao, vbo, ebo;
-	glGenVertexArrays(1, &vao);
-	glGenBuffers(1, &vbo);
-	glGenBuffers(1, &ebo);
-
-	// Bind VAO
-	glBindVertexArray(vao);
-
-	// Bind and fill VBO
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-
-	// Bind and fill EBO
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
-
-	// Configure vertex attributes
-	glEnableVertexAttribArray(0); // Position attribute
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
-
-	glEnableVertexAttribArray(1); // Normal attribute
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-
-	glEnableVertexAttribArray(2); // Texture coordinate attribute
-	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-
-	// Unbind VAO (optional, to avoid accidental changes)
-	glBindVertexArray(0);
-
-	return { vao, vbo, ebo, indices.size(), textureID };
-}
-
-
-GLuint loadTexture(const string& path) {
-	GLuint textureID;
-	glGenTextures(1, &textureID);
-
-	int width, height, nrChannels;
-	unsigned char* data = stbi_load(path.c_str(), &width, &height, &nrChannels, 0);
-
-	if (data) {
-		GLenum format = (nrChannels == 3) ? GL_RGB : GL_RGBA;
-		glBindTexture(GL_TEXTURE_2D, textureID);
-		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-		glGenerateMipmap(GL_TEXTURE_2D);
-
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	}
-
-	stbi_image_free(data);
-	return textureID;
-}
-
-glm::mat4 transformToMat4(const Transform& transform) {
-	glm::mat4 translationMatrix = glm::translate(glm::mat4(1.0f), transform.position);
-	glm::mat4 rotationMatrix = glm::mat4_cast(transform.rotation);
-	glm::mat4 scaleMatrix = glm::scale(glm::mat4(1.0f), transform.scale);
-
-	return translationMatrix * rotationMatrix * scaleMatrix;
-}
-
-Transform mat4ToTransform(const glm::mat4& mat) {
-	Transform transform;
-
-	// Extract translation
-	transform.position = glm::vec3(mat[3]);
-
-	// Extract scale by calculating the length of the basis vectors
-	transform.scale = glm::vec3(
-		glm::length(glm::vec3(mat[0])),
-		glm::length(glm::vec3(mat[1])),
-		glm::length(glm::vec3(mat[2]))
-	);
-
-	// Remove scale from the matrix to extract the rotation
-	glm::mat4 rotationMatrix = mat;
-	rotationMatrix[0] /= transform.scale.x;
-	rotationMatrix[1] /= transform.scale.y;
-	rotationMatrix[2] /= transform.scale.z;
-
-	transform.rotation = glm::quat_cast(rotationMatrix);
-
-	return transform;
-}
-
-
-
-void drawModel(const Model& model, const Transform modelTransform = defaultTransform) {
-	glUseProgram(app_shader_program);
-	
-	// Convert Transform to a matrix
-	glm::mat4 modelMatrix = transformToMat4(modelTransform);
-
-	// Update transformation matrices
-	app_transform_buffer_t modelTransformBuffer;
-	modelTransformBuffer.viewproj = transform_buffer.viewproj;
-	modelTransformBuffer.world = modelMatrix;
-
-	glBindBuffer(GL_UNIFORM_BUFFER, app_uniform_buffer);
-	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(app_transform_buffer_t), &modelTransformBuffer);
-
-	// Bind the model's texture
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, model.textureID);
-	glUniform1i(glGetUniformLocation(app_shader_program, "texture_diffuse"), 0);
-
-	// Draw the model
-	glBindVertexArray(model.vao);
-	glDrawElements(GL_TRIANGLES, model.indexCount, GL_UNSIGNED_INT, 0);
-	glBindVertexArray(0);
-
-	glUseProgram(0);
-}
-
-
-void cleanupModel(const Model& model) {
-	glDeleteBuffers(1, &model.vbo);
-	glDeleteBuffers(1, &model.ebo);
-	glDeleteVertexArrays(1, &model.vao);
-}
-
-///////////////////////////////////////////
-
-void Audio::playAudio(const string& audioPath) {
-	// Load audio file
-	if (!buffer.loadFromFile(audioPath)) {
-		MessageBox(nullptr, _T("Failed to load audio file"), _T("Error"), MB_OK);
-	}
-	// Play audio
-	sound.setBuffer(buffer);
-	sound.play();
-}
-
-void Audio::stopAudio() {
-	// Stop audio
-	sound.stop();
-}
-
-void Audio::setVolume(float volume) {
-	sound.setVolume(volume);
-}
-
