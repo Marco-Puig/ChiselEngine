@@ -24,8 +24,8 @@ Transform rockTransform; // transform (position, rotation, scale)
 
 // Logic that runs once at the start of the game and used for initialization/declarations
 void Game::start() {
-	rockModel = loadModel("Resources/rock.obj", "Resources/rock_texture.jpeg");
-	sceneModel = loadModel("Resources/zen_garden.obj", "Resources/zen_garden_texture.jpeg");
+	rockModel.loadModel("Resources/rock.obj", "Resources/rock_texture.jpeg");
+	sceneModel.loadModel("Resources/zen_garden.obj", "Resources/zen_garden_texture.jpeg");
 }
 
 // Logic that runs once per frame - used for game logic
@@ -36,8 +36,8 @@ void Game::update() {
 
 // Logic that runs once per frame - used for rendering
 void Game::render() {
-	drawModel(rockModel, rockTransform);
-	drawModel(sceneModel); // use default transform if no transform is provided
+	rockModel.drawModel(rockTransform);
+	sceneModel.drawModel(); // use default transform if no transform is provided
 }
 ```
 <img width="574" alt="Screenshot 2024-12-20 212619" src="https://github.com/user-attachments/assets/1571482e-8adf-43cb-a148-b198c25e78cd" />
