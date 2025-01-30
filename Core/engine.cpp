@@ -1,65 +1,6 @@
 #include "core/gameobject.cpp"
 #include "core/audio.cpp"
-
-const char* vertex_glsl = R"(
-#version 450 core
-layout (location = 0) in vec3 in_pos;
-layout (location = 1) in vec3 in_norm;
-layout (location = 2) in vec2 in_texCoords; // Input texture coordinates
-
-out vec2 TexCoords; // Pass texture coordinates to fragment shader
-
-layout(std140) uniform TransformBuffer {
-    mat4 world;
-    mat4 viewproj;
-};
-
-void main() {
-    TexCoords = in_texCoords;
-    gl_Position = viewproj * world * vec4(in_pos, 1.0);
-}
-
-)";
-
-const char* fragment_glsl = R"(
-#version 450 core
-in vec2 TexCoords; 
-out vec4 fragColor;
-
-uniform sampler2D texture_diffuse; 
-
-void main() {
-	fragColor = texture(texture_diffuse, TexCoords);
-}
-)";
-
-const char* cubemap_vertex_glsl = R"(
-#version 450 core
-layout (location = 0) in vec3 aPos;
-
-uniform mat4 uProjection;
-uniform mat4 uView;
-
-out vec3 TexCoords;
-
-void main() {
-    TexCoords = aPos;
-    vec4 pos = uProjection * uView * vec4(aPos, 1.0);
-    gl_Position = pos.xyww; // trick to ensure depth = 1.0 and we don't discard skybox
-}
-)";
-
-const char* cubemap_fragment_glsl = R"(
-#version 450 core
-in vec3 TexCoords;
-out vec4 FragColor;
-
-uniform samplerCube skybox;
-
-void main() {    
-    FragColor = texture(skybox, TexCoords);
-}
-)";
+#include "core/shaders.cpp"
 
 int main() {
 	// Initialize GLFW (creates the window and OpenGL context)
@@ -726,7 +667,10 @@ void gl_swapchain_destroy(swapchain_t& swapchain) {
 ///////////////////////////////////////////
 
 void app_init() {
-	app_shader_program = gl_create_program(vertex_glsl, fragment_glsl);
+
+	// Main app shader setup
+	Shaders defaultShaders("Shaders/default.vert", "Shaders/default.frag");
+	app_shader_program = gl_create_program(defaultShaders.vertexShader, defaultShaders.fragmentShader);
 
 	// Create a UBO for transform data
 	glGenBuffers(1, &app_uniform_buffer);
@@ -740,10 +684,9 @@ void app_init() {
 	glUniformBlockBinding(app_shader_program, blockIndex, 0);
 	glBindBufferBase(GL_UNIFORM_BUFFER, 0, app_uniform_buffer);
 
-	// ----------------------------
-	// SKYBOX SETUP
-	// ----------------------------
-	skyboxShaderProgram = gl_create_program(cubemap_vertex_glsl, cubemap_fragment_glsl);
+	// Skybox/Cubemap setup
+	Shaders skyboxShaders("Shaders/cubemap.vert", "Shaders/cubemap.frag");
+	skyboxShaderProgram = gl_create_program(skyboxShaders.vertexShader, skyboxShaders.fragmentShader);
 
 	// Create skybox VAO/VBO/EBO
 	glGenVertexArrays(1, &skyboxVAO);

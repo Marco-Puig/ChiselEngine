@@ -184,6 +184,11 @@
     <None Include="Core/engine.cpp" />
     <None Include="Core/gameobject.cpp" />
     <None Include="Core/audio.cpp" />
+    <None Include="Shaders/default.vert" />
+    <None Include="Shaders/default.frag" />
+    <None Include="Shaders/cubemap.frag" />
+    <None Include="Shaders/cubemap.vert" />
+    <None Include="Core/shaders.cpp" />
     <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
