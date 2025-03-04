@@ -18,6 +18,7 @@ void Game::update() {
 		testSound.stopAudio(); // can also stop the same audio, for example, on input
 }
 
+// TODO: make transform within model and have drawing be automatic
 // Logic that runs once per frame - used for rendering
 void Game::render() {
 	rockModel.drawModel();
