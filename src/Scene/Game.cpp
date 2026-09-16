@@ -5,10 +5,7 @@ void Game::start() {
     std::cout << "Game started..." << std::endl;
 }
 
-void Game::update() {
+void Game::update(float deltaTime) {
     // Game logic here
 }
 
-void Game::render() {
-    // Render objects here
-}

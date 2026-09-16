@@ -1,16 +1,23 @@
-#version 450 core
-layout (location = 0) in vec3 in_pos;
-layout (location = 1) in vec3 in_norm;
-layout (location = 2) in vec2 in_texCoords; // Input texture coordinates
+#version 430 core
 
-out vec2 TexCoords; // Pass texture coordinates to fragment shader
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aTexCoord;
 
-layout(std140) uniform TransformBuffer {
-    mat4 world;
-    mat4 viewproj;
-};
+out vec3 FragPos;
+out vec3 Normal;
+out vec2 TexCoord;
+
+uniform mat4 uModel;
+uniform mat4 uViewProj;
 
 void main() {
-    TexCoords = in_texCoords;
-    gl_Position = viewproj * world * vec4(in_pos, 1.0);
+    FragPos = vec3(uModel * vec4(aPos, 1.0));
+    
+    // Calculate normal matrix to handle non-uniform scaling
+    mat3 normalMatrix = transpose(inverse(mat3(uModel)));
+    Normal = normalize(normalMatrix * aNormal);
+    
+    TexCoord = aTexCoord;
+    gl_Position = uViewProj * vec4(FragPos, 1.0);
 }

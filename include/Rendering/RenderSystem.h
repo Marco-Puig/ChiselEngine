@@ -4,8 +4,10 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
+#include "Light.h"
 
 struct app_transform_buffer_t {
+
     glm::mat4 world;
     glm::mat4 viewproj;
 };
@@ -21,7 +23,18 @@ public:
     void shutdown();
     GLuint loadCubemap(std::vector<std::string> faces);
 
+    void addLight(Light* light);
+    void clearLights();
+    
+    // New: Method to update shader uniforms with current light data
+    void updateLightingUniforms(GLuint shaderProgram);
+    
+    void renderScene();
+
     GLuint getShaderProgram() const { return m_appShaderProgram; }
+
+
+
     GLuint getVAO() const { return m_appVAO; }
 
 private:
@@ -39,4 +52,8 @@ private:
     GLuint m_skyboxVBO = 0;
     GLuint m_skyboxEBO = 0;
     GLuint m_cubemapTexture = 0;
+
+private:
+    std::vector<Light*> m_lights;
 };
+

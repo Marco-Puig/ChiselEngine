@@ -4,7 +4,7 @@
 
 class Game {
 public:
-    void start();
-    void update();
-    void render();
+	void start();
+	void update(float deltaTime);
 };
+

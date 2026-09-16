@@ -1,9 +1,32 @@
-#version 450 core
-in vec2 TexCoords; 
-out vec4 fragColor;
+#version 430 core
 
-uniform sampler2D texture_diffuse; 
+out vec4 FragColor;
+
+in vec3 FragPos;
+in vec3 Normal;
+in vec2 TexCoord;
+
+uniform sampler2D uTexture;
+uniform vec3 uLightColor;
+uniform vec3 uLightDir;
+uniform vec3 uViewPos;
 
 void main() {
-	fragColor = texture(texture_diffuse, TexCoords);
+    // Sample texture
+    vec4 texColor = texture(uTexture, TexCoord);
+    
+    // Ambient lighting
+    float ambientStrength = 0.2;
+    vec3 ambient = ambientStrength * uLightColor;
+    
+    // Diffuse lighting (Lambertian)
+    vec3 norm = normalize(Normal);
+    vec3 lightDir = normalize(-uLightDir);
+    float diff = max(dot(norm, lightDir), 0.0);
+    vec3 diffuse = diff * uLightColor;
+    
+    // Combine and apply to texture
+    vec3 result = (ambient + diffuse) * texColor.rgb;
+    
+    FragColor = vec4(result, texColor.a);
 }
