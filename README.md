@@ -65,8 +65,6 @@ void Game::update(float deltaTime) {
     rockAnimator->update(deltaTime);
 }
 
-// Note: Rendering is now handled automatically by the RenderSystem
-
 ```
 
 ## Animation System
@@ -76,6 +74,26 @@ The engine supports two types of animation via the `Animator` class:
    - `animator->animateAxis("x", 1.0f);`
 2. **Keyframe Animation**: Fully compatible with GLTF/GLB. The engine interpolates between keyframes using SLERP for rotations, providing smooth, professional movement.
    - `animator->playAnimation("WalkCycle");`
+
+## Physics System
+ChiselEngine integrates **Jolt Physics** via a high-level wrapper for efficient, multi-threaded simulation.
+
+### Using Physics
+You can attach a `PhysicsBody` to any `Node` to make it react to gravity and collisions.
+
+```C++
+#include "Platform/PhysicsSystem.h"
+
+// Create a dynamic physics body for a node
+PhysicsBody* ballPhys = PhysicsSystem::getInstance().createRigidBody(ballNode, BodyType::Dynamic);
+ballPhys->setMass(1.0f);
+ballPhys->applyForce(glm::vec3(0, 10, 0)); // Apply upward force
+```
+
+### Body Types:
+- **Static**: Unmovable objects (walls, floors).
+- **Kinematic**: Moved via code, but can push dynamic objects.
+- **Dynamic**: Fully simulated by the physics engine (affected by gravity).
 
 ## Features
 - **VR-First Design**: Direct OpenXR integration for low-latency headset rendering.

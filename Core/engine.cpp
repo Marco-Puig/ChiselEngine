@@ -1,10 +1,12 @@
 #include "Platform/Window.h"
 #include "Platform/DevUI.h"
+#include "Platform/PhysicsSystem.h"
 #include "XR/XRManager.h"
 #include "Rendering/RenderSystem.h"
 #include "Scene/Game.h"
 #include <iostream>
 #include <thread>
+
 
 
 int main() {
@@ -26,8 +28,13 @@ int main() {
         xr.setSimulation(true);
     }
 
-    // 4. Initialize DevUI
-    DevUI& devUI = DevUI::getInstance();
+    // 4. Initialize Physics
+    PhysicsSystem& physics = PhysicsSystem::getInstance();
+    if (!physics.init()) {
+        std::cerr << "Physics system failed to initialize" << std::endl;
+    }
+
+    // 5. Initialize DevUI
     devUI.init("Chisel Engine DevTools");
     devUI.addCheckbox("Simulated VR", false, [&](bool checked) {
         xr.setSimulation(checked);
@@ -49,7 +56,12 @@ int main() {
     while (!glfwWindowShouldClose(window.getHandle())) {
         devUI.update();
         glfwPollEvents();
+        
+        float deltaTime = 0.016f; // Simplified: should be calculated from glfwGetTime()
+        physics.update(deltaTime);
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 
 
         xr.pollEvents(quit);
@@ -65,8 +77,10 @@ int main() {
 
     xr.shutdown();
     renderer.shutdown();
+    physics.shutdown();
     devUI.shutdown();
     window.shutdown();
+
 
 
     return 0;
