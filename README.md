@@ -17,15 +17,33 @@ ChiselEngine follows a **Modular Singleton Architecture**, inspired by modern en
 - **`Core`**: The entry point and coordination layer that initializes and shuts down the systems.
 
 ## Instructions 
-Since this project is working off a Solution (.sln) file, I recommend using Visual Studio 2022.
+Since this project uses **CMake**, you can build it using any C++ compiler, though Visual Studio 2022 is recommended.
 
-Ensure you have the **C++ Development Package** installed via the Visual Studio Installer.
+Ensure you have the **C++ Development Package** and **CMake** installed.
 
-### Setup
-1. Open `ChiselEngine.sln` in Visual Studio.
-2. Set the include directories to point to the `/include` folder.
-3. Ensure you have an instance of OpenXR running with a connected VR Headset or MR Device.
-4. Use only **GLB** or **glTF** files in the `Resources/` folder.
+### Setup & Build (Terminal)
+The fastest way to build the engine is via the command line:
+
+```powershell
+# 1. Create and enter the build directory
+mkdir build
+cd build
+
+# 2. Generate the project files
+cmake ..
+
+# 3. Build the executable
+cmake --build . --config Release
+```
+
+### Running the Engine
+Once built, you can launch the engine directly from the build folder:
+```powershell
+.\bin\ChiselEngine.exe
+```
+
+### Visual Studio Integration
+If you prefer the IDE, you can open the generated `build/ChiselEngine.sln` and build as usual.
 
 ## Getting Started - Game.cpp
 To create your game, you only need to implement the methods in `src/Scene/Game.cpp`.
