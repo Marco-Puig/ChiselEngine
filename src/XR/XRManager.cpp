@@ -92,7 +92,10 @@ void XRManager::shutdown() {
 }
 
 void XRManager::pollEvents(bool& exit) {
+    if (m_simulated) return;
+
     XrEventDataBuffer event_buffer = { XR_TYPE_EVENT_DATA_BUFFER };
+
     while (xrPollEvent(m_instance, &event_buffer) == XR_SUCCESS) {
         if (event_buffer.type == XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
             XrEventDataSessionStateChanged* changed = (XrEventDataSessionStateChanged*)&event_buffer;

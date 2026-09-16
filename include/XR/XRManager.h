@@ -43,7 +43,10 @@ public:
     void pollActions();
     void pollPredicted(XrTime predicted_time);
     void renderFrame();
+    void setSimulation(bool enabled) { m_simulated = enabled; }
+    bool isSimulated() const { return m_simulated; }
     bool renderLayer(XrTime predictedTime, std::vector<XrCompositionLayerProjectionView>& projectionViews, XrCompositionLayerProjection& layer);
+
 
     XrInstance getInstanceHandle() const { return m_instance; }
     XrSession getSessionHandle() const { return m_session; }
@@ -52,7 +55,11 @@ public:
 private:
     XRManager() = default;
 
+    bool m_simulated = false;
+    void updateSimulation();
+
     PFN_xrGetOpenGLGraphicsRequirementsKHR ext_xrGetOpenGLGraphicsRequirementsKHR = nullptr;
+
     PFN_xrCreateDebugUtilsMessengerEXT    ext_xrCreateDebugUtilsMessengerEXT = nullptr;
     PFN_xrDestroyDebugUtilsMessengerEXT   ext_xrDestroyDebugUtilsMessengerEXT = nullptr;
 

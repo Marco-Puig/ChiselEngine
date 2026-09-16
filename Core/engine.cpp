@@ -1,9 +1,11 @@
 #include "Platform/Window.h"
+#include "Platform/DevUI.h"
 #include "XR/XRManager.h"
 #include "Rendering/RenderSystem.h"
 #include "Scene/Game.h"
 #include <iostream>
 #include <thread>
+
 
 int main() {
     // 1. Initialize Window/Platform
@@ -18,12 +20,22 @@ int main() {
 
     // 3. Initialize XR
     XRManager& xr = XRManager::getInstance();
+    // If we can't init XR, we can still run in simulation mode
     if (!xr.init("Chisel Engine", 0x8C43)) {
-        std::cerr << "OpenXR initialization failed" << std::endl;
-        return 1;
+        std::cout << "OpenXR failed to init, defaulting to simulation mode." << std::endl;
+        xr.setSimulation(true);
     }
 
-    // 4. Initialize Rendering
+    // 4. Initialize DevUI
+    DevUI& devUI = DevUI::getInstance();
+    devUI.init("Chisel Engine DevTools");
+    devUI.addCheckbox("Simulated VR", false, [&](bool checked) {
+        xr.setSimulation(checked);
+        std::cout << "Simulation mode: " << (checked ? "ON" : "OFF") << std::endl;
+    });
+
+    // 5. Initialize Rendering
+
     RenderSystem& renderer = RenderSystem::getInstance();
     renderer.init();
 
@@ -35,8 +47,10 @@ int main() {
 
     bool quit = false;
     while (!glfwWindowShouldClose(window.getHandle())) {
+        devUI.update();
         glfwPollEvents();
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 
         xr.pollEvents(quit);
         if (quit) break;
@@ -51,7 +65,9 @@ int main() {
 
     xr.shutdown();
     renderer.shutdown();
+    devUI.shutdown();
     window.shutdown();
+
 
     return 0;
 }
