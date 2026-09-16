@@ -1,51 +1,58 @@
 # ChiselEngine
-Chisel Engine is a game engine built on OpenXR and OpenGL, designed for developing immersive VR applications.
+Chisel Engine is a modular game engine built on OpenXR and OpenGL, designed for developing immersive VR applications.
+
+## Architecture
+The engine has been refactored into a modular singleton-based architecture to ensure scalability and ease of maintenance:
+
+- **`Platform`**: Manages OS-level concerns, including GLFW window creation and input handling.
+- **`XR`**: Handles the OpenXR session, headset tracking, swapchains, and VR input.
+- **`Rendering`**: Manages the OpenGL pipeline, shaders, textures, and buffer management.
+- **`Scene`**: Contains high-level game logic and the main `Game` class.
+- **`Core`**: The entry point and coordination layer that initializes and shuts down the systems.
 
 ## Instructions 
-Since this project is working off a Solution (.sln) file, I recommend to use Visual Studio 2022
+Since this project is working off a Solution (.sln) file, I recommend using Visual Studio 2022.
 
-Ensure you have the C++ Development Package Installed (You will be shown this as option in the Visual Studio Installer)
+Ensure you have the **C++ Development Package** installed via the Visual Studio Installer.
 
-Additionally, you will need to use your own **OBJ** file(s) in the Resources folder.\
-For example: `Resources/rock.obj`
-
-Before running, make sure you have an instance of OpenXR running along with a connected VR Headset or MR Device.
-
-## Features
-- Desktop Window to Display what is shown on the VR Headset via OpenXR
-- Controller detection and input support
-- Game Logic Component (No need to work with the Engine to start creating your Game)
+### Setup
+1. Open `ChiselEngine.sln` in Visual Studio.
+2. Set the include directories to point to the `/include` folder.
+3. Ensure you have an instance of OpenXR running with a connected VR Headset or MR Device.
+4. Use your own **OBJ** files in the `Resources/` folder.
 
 ## Getting Started - Game.cpp
-```C++
-Model rockModel, sceneModel; // Models
-Texture rockTexture, sceneTexture; // Their respective textures
-Transform rockTransform; // transform (position, rotation, scale)
+To create your game, you only need to implement the methods in `src/Scene/Game.cpp`.
 
-// Logic that runs once at the start of the game and used for initialization/declarations
+```C++
+#include "Scene/Game.h"
+
+Model rockModel;
+Transform rockTransform;
+
+// Logic that runs once at the start of the game
 void Game::start() {
-	rockModel.loadModel("Resources/rock.obj", "Resources/rock_texture.jpeg");
-	sceneModel.loadModel("Resources/zen_garden.obj", "Resources/zen_garden_texture.jpeg");
+    rockModel.loadModel("Resources/rock.obj", "Resources/rock_texture.jpeg");
 }
 
 // Logic that runs once per frame - used for game logic
 void Game::update() {
-	// For example: we can have the rock move forward in the z-axis by .01 each frame
-	rockTransform.position += glm::vec3(0.0f, 0.0f, 0.01f);
+    // Move the rock forward in the z-axis
+    rockTransform.position += glm::vec3(0.0f, 0.0f, 0.01f);
 }
 
 // Logic that runs once per frame - used for rendering
 void Game::render() {
-	rockModel.drawModel(rockTransform);
-	sceneModel.drawModel(); // use default transform if no transform is provided
+    rockModel.drawModel(rockTransform);
 }
 ```
-<img width="574" alt="Screenshot 2024-12-20 212619" src="https://github.com/user-attachments/assets/1571482e-8adf-43cb-a148-b198c25e78cd" />
+
+## Features
+- **VR-First Design**: Direct OpenXR integration for low-latency headset rendering.
+- **Mirror Window**: Integrated desktop window to display the VR view for debugging.
+- **Modular Pipeline**: Clean separation between platform, rendering, and gameplay code.
 
 ## Special Thanks and Credits
-OpenGL: https://learnopengl.com/ \
-SFML: https://www.sfml-dev.org/ \
-OpenXR: https://github.com/maluoi
-
-
-
+- OpenGL: https://learnopengl.com/
+- SFML: https://www.sfml-dev.org/
+- OpenXR: https://github.com/khronosgroup/OpenXR-SDK-Source
