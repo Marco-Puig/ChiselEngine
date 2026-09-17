@@ -1,35 +1,37 @@
-#include "Platform/Window.h"
-#include <windows.h>
-#include <iostream>
+#include "Window.h"
+#include <stdexcept>
 
-void Window::init(int width, int height) {
-    m_width = width;
-    m_height = height;
-
+Window::Window(int width, int height, const std::string& title) {
     if (!glfwInit()) {
-        MessageBox(nullptr, _T("GLFW initialization failed\n"), _T("Error"), MB_OK);
-        return;
+        throw std::runtime_error("Failed to initialize GLFW");
     }
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    
-    m_window = glfwCreateWindow(m_width, m_height, "Chisel Engine - OpenGL 4.3", nullptr, nullptr);
 
+    m_window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!m_window) {
-        MessageBox(nullptr, _T("Window creation failed\n"), _T("Error"), MB_OK);
         glfwTerminate();
-        return;
+        throw std::runtime_error("Failed to create GLFW window");
     }
 
     glfwMakeContextCurrent(m_window);
-    m_hWnd = (HWND)glfwGetWin32Window(m_window);
 }
 
-void Window::shutdown() {
-    if (m_window) {
-        glfwDestroyWindow(m_window);
-    }
+Window::~Window() {
+    glfwDestroyWindow(m_window);
     glfwTerminate();
+}
+
+bool Window::shouldClose() const {
+    return glfwWindowShouldClose(m_window);
+}
+
+void Window::pollEvents() {
+    glfwPollEvents();
+}
+
+void Window::swapBuffers() {
+    glfwSwapBuffers(m_window);
 }

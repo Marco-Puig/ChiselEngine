@@ -1,126 +1,63 @@
 # ChiselEngine
-Chisel Engine is a modular, high-performance game engine built on OpenXR and OpenGL, designed for developing immersive VR applications.
 
-## Design Philosophy
-ChiselEngine follows a **Modular Singleton Architecture**, inspired by modern engines like Babylon.js. The goal is to decouple the underlying platform and rendering complexity from the gameplay logic.
+ChiselEngine is a modular VR game engine built on C++20, OpenGL, and OpenXR. It is designed to decouple complex VR boilerplate from gameplay logic.
 
-- **Separation of Concerns**: Platform, XR, Rendering, and Scene management are strictly isolated into independent modules.
-- **Node-Based Scene Graph**: Instead of raw meshes, everything in the scene is a `Node`. This allows for hierarchical transformations and streamlined animation.
-- **Data-Driven Animations**: Support for GLTF/GLB standards allows artists to create complex animations in tools like Blender and trigger them by name in code.
-- **Developer-First Workflow**: Integrated tools like the `DevUI` and VR Simulation mode allow for rapid iteration without needing a headset for every change.
+## Philosophy
+The engine follows a "Zero-Friction" philosophy. The goal is to allow developers to focus on gameplay mechanics rather than VR hardware abstraction. This is achieved through:
+- Modular Singletons: Core systems (Rendering, XR, Physics) are accessible globally.
+- Scene Graph: A Node-based hierarchy for intuitive object transformation and parenting.
+- VR-First with Desktop Fallback: The engine prioritizes OpenXR but gracefully falls back to a simulated desktop mode for easier development and testing.
 
-## Architecture
-- **`Platform`**: Manages OS-level concerns, including GLFW window creation and the `DevUI` developer tool.
-- **`XR`**: Handles the OpenXR session, headset tracking, swapchains, and VR input.
-- **`Rendering`**: Manages the OpenGL pipeline, including a dynamic lighting system and GLB model loading.
-- **`Scene`**: Contains the `Node` hierarchy, `Animator` logic, and the main `Game` class.
-- **`Core`**: The entry point and coordination layer that initializes and shuts down the systems.
+## Making a Game
+Gameplay is implemented by inheriting from the `IGame` interface and implementing the `Game` class in `src/game/Game.cpp`.
 
-## Instructions 
-Since this project uses **CMake**, you can build it using any C++ compiler, though Visual Studio 2022 is recommended.
+### Game Life Cycle
+- `start()`: Called once when the engine launches. Use this to initialize your scene, load models, and set up lighting.
+- `update(float deltaTime)`: Called every frame. This is where you handle input and update game logic.
 
-Ensure you have the **C++ Development Package** and **CMake** installed.
-
-### Setup & Build (Terminal)
-The fastest way to build the engine is via the command line:
-
-```powershell
-# 1. Create and enter the build directory
-mkdir build
-cd build
-
-# 2. Generate the project files
-cmake ..
-
-# 3. Build the executable
-cmake --build . --config Release
-```
-
-### Running the Engine
-Once built, you can launch the engine directly from the build folder:
-```powershell
-.\bin\ChiselEngine.exe
-```
-
-### Visual Studio Integration
-If you prefer the IDE, you can open the generated `build/ChiselEngine.sln` and build as usual.
-
-## Getting Started - Game.cpp
-To create your game, you only need to implement the methods in `src/Scene/Game.cpp`.
-
-```C++
-#include "Scene/Game.h"
-#include "Scene/Node.h"
-#include "Scene/Animator.h"
-#include "Rendering/RenderSystem.h"
-#include "Rendering/DirectionalLight.h"
-#include "Rendering/GLBLoader.h"
-
-MeshNode* rockNode;
-Animator* rockAnimator;
-
+### Example Implementation
+```cpp
 void Game::start() {
-    // 1. Setup Lighting
+    // Add a sun light to the world
     DirectionalLight* sun = new DirectionalLight("Sun", glm::vec3(-0.2f, -1.0f, -0.3f));
-    sun->setColor(glm::vec3(1.0f, 0.9f, 0.8f));
-    sun->setIntensity(1.5f);
     RenderSystem::getInstance().addLight(sun);
 
-    // 2. Load Model as a Node
-    rockNode = GLBLoader::loadGLB("Resources/rock.glb");
-    
-    // 3. Setup Animator
-    rockAnimator = new Animator(rockNode);
-    
-    // Procedural: Move along Z axis by 0.5 units/sec
-    rockAnimator->animateAxis("z", 0.5f);
-    
-    // Keyframe: Play "Idle" clip loaded from GLB
-    rockAnimator->playAnimation("Idle");
+    // Load a model into the scene
+    MeshNode* playerSword = GLBLoader::loadGLB("Resources/sword.glb");
+    sceneRoot->addChild(std::unique_ptr<Node>(playerSword));
 }
 
 void Game::update(float deltaTime) {
-    rockAnimator->update(deltaTime);
+    if (Input::isButtonPressed("BUTTON_A")) {
+        swordAnimator->playAnimation("Attack_Swing");
+    }
 }
-
 ```
 
-## Animation System
-The engine supports two types of animation via the `Animator` class:
+## Build and Run
 
-1. **Procedural Animation**: Direct control over axis velocity. Great for simple movement or floating effects.
-   - `animator->animateAxis("x", 1.0f);`
-2. **Keyframe Animation**: Fully compatible with GLTF/GLB. The engine interpolates between keyframes using SLERP for rotations, providing smooth, professional movement.
-   - `animator->playAnimation("WalkCycle");`
+### Prerequisites
+- CMake 3.14+
+- Visual Studio 2022 (MSVC)
+- Git
 
-## Physics System
-ChiselEngine integrates **Jolt Physics** via a high-level wrapper for efficient, multi-threaded simulation.
+### Build Instructions
+1. Open a terminal in the root directory.
+2. Create and enter the build folder:
+   ```powershell
+   mkdir build; cd build
+   ```
+3. Configure the project:
+   ```powershell
+   cmake ..
+   ```
+4. Compile the engine:
+   ```powershell
+   cmake --build .
+   ```
 
-### Using Physics
-You can attach a `PhysicsBody` to any `Node` to make it react to gravity and collisions.
-
-```C++
-#include "Platform/PhysicsSystem.h"
-
-// Create a dynamic physics body for a node
-PhysicsBody* ballPhys = PhysicsSystem::getInstance().createRigidBody(ballNode, BodyType::Dynamic);
-ballPhys->setMass(1.0f);
-ballPhys->applyForce(glm::vec3(0, 10, 0)); // Apply upward force
+### Running the Engine
+Run the compiled executable from the build folder:
+```powershell
+.\Debug\ChiselEngine.exe
 ```
-
-### Body Types:
-- **Static**: Unmovable objects (walls, floors).
-- **Kinematic**: Moved via code, but can push dynamic objects.
-- **Dynamic**: Fully simulated by the physics engine (affected by gravity).
-
-## Features
-- **VR-First Design**: Direct OpenXR integration for low-latency headset rendering.
-- **Mirror Window**: Integrated desktop window to display the VR view for debugging.
-- **DevUI**: A separate Win32 window to toggle simulation and debug engine state.
-- **VR Simulation**: Test your game without a headset using the "Simulated VR" toggle.
-- **Modern Lighting**: Real-time directional lighting with Phong shading.
-
-## Special Thanks and Credits
-- OpenGL: https://learnopengl.com/
-- SFML: https://www.sfml-dev.org/
-- OpenXR: https://github.com/khronosgroup/OpenXR-SDK-Source
