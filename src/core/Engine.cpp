@@ -1,10 +1,15 @@
 #include "Engine.h"
 #include "Rendering/RenderSystem.h"
+#include "Platform/DevUI.h"
+#include "xr/XRManager.h"
+#include <glad/glad.h>
 #include <chrono>
 
 void Engine::init() {
     m_window = std::make_unique<Window>(1280, 720, "ChiselEngine");
     RenderSystem::getInstance().init();
+    XRManager::getInstance().init(*m_window);
+    DevUI::getInstance().init(*m_window);
 }
 
 void Engine::run(IGame* game) {
@@ -18,8 +23,43 @@ void Engine::run(IGame* game) {
         lastTime = currentTime;
 
         m_window->pollEvents();
+        DevUI::getInstance().beginFrame();
         game->update(dt);
-        RenderSystem::getInstance().render(game->getSceneRoot());
+        XRManager& xr = XRManager::getInstance();
+        xr.syncActions();
+        if (xr.beginFrame()) {
+            for (uint32_t eye = 0; eye < 2; ++eye) {
+                glm::mat4 view;
+                glm::mat4 projection;
+                if (!xr.acquireView(eye, view, projection))
+                    continue;
+                GLuint framebuffer = 0;
+                GLuint depthBuffer = 0;
+                glGenFramebuffers(1, &framebuffer);
+                glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                       GL_TEXTURE_2D, xr.getViewTexture(eye), 0);
+                glGenRenderbuffers(1, &depthBuffer);
+                glBindRenderbuffer(GL_RENDERBUFFER, depthBuffer);
+                glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+                                      static_cast<GLsizei>(xr.getViewWidth(eye)),
+                                      static_cast<GLsizei>(xr.getViewHeight(eye)));
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                          GL_RENDERBUFFER, depthBuffer);
+                RenderSystem::getInstance().renderView(
+                    game->getSceneRoot(), view, projection, framebuffer,
+                    static_cast<int>(xr.getViewWidth(eye)),
+                    static_cast<int>(xr.getViewHeight(eye)));
+                glDeleteFramebuffers(1, &framebuffer);
+                glDeleteRenderbuffers(1, &depthBuffer);
+                xr.releaseView(eye);
+            }
+            xr.endFrame();
+        } else {
+            RenderSystem::getInstance().render(game->getSceneRoot());
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        DevUI::getInstance().render(*m_window, xr, dt);
         m_window->swapBuffers();
     }
 }

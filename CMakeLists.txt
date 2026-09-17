@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Put binaries in one predictable place
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+option(CHISEL_ENABLE_OPENXR "Build OpenXR headset support" ON)
 
 include(FetchContent)
 
@@ -70,7 +71,21 @@ FetchContent_Declare(imgui
     GIT_SHALLOW    TRUE
 )
 
+if(CHISEL_ENABLE_OPENXR)
+    FetchContent_Declare(openxr
+        GIT_REPOSITORY https://github.com/KhronosGroup/OpenXR-SDK-Source.git
+        GIT_TAG        release-1.1.46
+        GIT_SHALLOW    TRUE
+        SYSTEM
+        EXCLUDE_FROM_ALL
+    )
+endif()
+
 FetchContent_MakeAvailable(glfw glm glad tinygltf imgui)
+if(CHISEL_ENABLE_OPENXR)
+    set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(openxr)
+endif()
 
 set(OpenGL_GL_PREFERENCE GLVND)
 find_package(OpenGL REQUIRED)
@@ -116,6 +131,16 @@ target_include_directories(ChiselEngine PRIVATE
 )
 
 target_compile_definitions(ChiselEngine PRIVATE GLFW_INCLUDE_NONE)
+if(CHISEL_ENABLE_OPENXR)
+    target_compile_definitions(ChiselEngine PRIVATE
+        CHISEL_ENABLE_OPENXR
+        XR_USE_GRAPHICS_API_OPENGL
+    )
+    if(WIN32)
+        target_compile_definitions(ChiselEngine PRIVATE XR_USE_PLATFORM_WIN32)
+    endif()
+    target_link_libraries(ChiselEngine PRIVATE openxr_loader)
+endif()
 
 target_link_libraries(ChiselEngine PRIVATE
     glad

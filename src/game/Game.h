@@ -1,6 +1,7 @@
 #pragma once
 #include "core/IGame.h"
 #include "scene/Node.h"
+#include "scene/Animator.h"
 #include <memory>
 
 class Game : public IGame {
@@ -12,5 +13,6 @@ public:
 
 private:
     std::unique_ptr<Node> sceneRoot;
-    class Animator* swordAnimator = nullptr;
+    std::unique_ptr<Animator> animator;
+    Node* cube = nullptr;
 };
