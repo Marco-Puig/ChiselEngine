@@ -145,11 +145,11 @@ endif()
 # -----------------------------------------------------
 # Post-Build: Copy Resources
 # -----------------------------------------------------
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Resources)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/resources)
     add_custom_command(TARGET ChiselEngine POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/Resources
-            $<TARGET_FILE_DIR:ChiselEngine>/Resources
+            ${CMAKE_CURRENT_SOURCE_DIR}/resources
+            $<TARGET_FILE_DIR:ChiselEngine>/resources
         COMMENT "Copying Resources next to the executable"
     )
 endif()

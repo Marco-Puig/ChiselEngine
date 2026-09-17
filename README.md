@@ -48,8 +48,8 @@ void Game::start() {
     sun->setColor(glm::vec3(1.0f, 0.9f, 0.8f));
     RenderSystem::getInstance().addLight(sun);
 
-    // Load a GLB model as a Node
-    MeshNode* playerSword = GLBLoader::loadGLB("Resources/sword.glb");
+    // Load the bundled OpenGL test model as a Node
+    MeshNode* cube = GLBLoader::loadGLB("resources/cube.glb");
 }
 ```
 
@@ -83,10 +83,10 @@ body->setMass(5.0f);
 
    **Option A - batch scripts (Windows, recommended):**
    ```
-   rebuild.bat
+   build.bat
    run.bat
    ```
-   `rebuild.bat` wipes any existing `build` folder and does a clean configure + build. `run.bat` launches the built executable (defaults to Debug; pass `Release` for a release build, e.g. `run.bat Release`).
+   `build.bat` configures and builds the engine. `run.bat` launches the built executable (defaults to Debug; pass `Release` for a release build, e.g. `run.bat Release`). The default game loads and renders `resources/cube.glb`.
 
    **Option B - run the commands yourself:**
    ```powershell

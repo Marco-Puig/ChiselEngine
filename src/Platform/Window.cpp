@@ -1,4 +1,5 @@
 #include "Window.h"
+#include <glad/glad.h>
 #include <stdexcept>
 
 Window::Window(int width, int height, const std::string& title) {
@@ -17,6 +18,11 @@ Window::Window(int width, int height, const std::string& title) {
     }
 
     glfwMakeContextCurrent(m_window);
+    if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) {
+        glfwDestroyWindow(m_window);
+        glfwTerminate();
+        throw std::runtime_error("Failed to initialize OpenGL loader");
+    }
 }
 
 Window::~Window() {

@@ -7,6 +7,7 @@
 class Shader {
 public:
     Shader(const std::string& vertexPath, const std::string& fragmentPath);
+    Shader(const char* vertexSource, const char* fragmentSource);
     ~Shader();
 
     void use();
@@ -17,4 +18,5 @@ public:
 private:
     unsigned int m_id;
     std::string loadShaderSource(const std::string& path);
+    void create(const char* vertexSource, const char* fragmentSource);
 };
