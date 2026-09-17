@@ -1,53 +1,155 @@
-cmake_minimum_required(VERSION 3.14)
-project(ChiselEngine LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.24)
+project(ChiselEngine LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_POLICY_DEFAULT_CMP0000 NEW)
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Put binaries in one predictable place
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 include(FetchContent)
 
-# GLFW
-FetchContent_Declare(glfw GIT_REPOSITORY https://github.com/glfw/glfw.git GIT_TAG 3.3.8)
-FetchContent_MakeAvailable(glfw)
+# -----------------------------------------------------
+# Dependency options (must be set before MakeAvailable)
+# -----------------------------------------------------
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
 
-# GLM
-FetchContent_Declare(glm GIT_REPOSITORY https://github.com/g-truc/glm.git GIT_TAG 0.9.9.8)
-FetchContent_MakeAvailable(glm)
+# tinygltf: compile tiny_gltf.cc into a real static lib.
+# HEADER_ONLY is what causes duplicate-symbol pain, so leave it OFF
+# and never #define TINYGLTF_IMPLEMENTATION in your own sources.
+set(TINYGLTF_HEADER_ONLY OFF CACHE BOOL "" FORCE)
+set(TINYGLTF_INSTALL OFF CACHE BOOL "" FORCE)
+set(TINYGLTF_BUILD_LOADER_EXAMPLE OFF CACHE BOOL "" FORCE)
+set(TINYGLTF_BUILD_GL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(TINYGLTF_BUILD_VALIDATOR_EXAMPLE OFF CACHE BOOL "" FORCE)
+set(TINYGLTF_BUILD_BUILDER_EXAMPLE OFF CACHE BOOL "" FORCE)
 
-# Dear ImGui
-FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.89)
-FetchContent_MakeAvailable(imgui)
+# -----------------------------------------------------
+# Dependencies
+# -----------------------------------------------------
+FetchContent_Declare(glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG        3.4
+    GIT_SHALLOW    TRUE
+    SYSTEM
+    EXCLUDE_FROM_ALL
+)
 
-# Assimp (Temporarily disabled to allow engine to boot)
-# set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-# set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
-# set(ASSIMP_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-# set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
-# set(ASSIMP_BUILD_ZLIB ON CACHE BOOL "" FORCE)
-# set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF CACHE BOOL "" FORCE)
-# set(ASSIMP_BUILD_GLTF_IMPORTER ON CACHE BOOL "" FORCE)
-# set(ASSIMP_BUILD_OBJ_IMPORTER ON CACHE BOOL "" FORCE)
-# set(ASSIMP_BUILD_FBX_IMPORTER ON CACHE BOOL "" FORCE)
-# set(ASSIMP_BUILD_EXPORT OFF CACHE BOOL "Disable all exporters to avoid build errors" FORCE)
-# FetchContent_Declare(assimp GIT_REPOSITORY https://github.com/assimp/assimp.git GIT_TAG v5.3.1)
-# FetchContent_MakeAvailable(assimp)
+FetchContent_Declare(glm
+    GIT_REPOSITORY https://github.com/g-truc/glm.git
+    GIT_TAG        1.0.1
+    GIT_SHALLOW    TRUE
+    SYSTEM
+    EXCLUDE_FROM_ALL
+)
 
-# Note: GLAD and OpenXR usually require platform-specific installers or generators.
-# For this setup, we assume they will be linked or provided via system paths/submodules.
-# In a real scenario, we'd use a GLAD generator and the OpenXR SDK installer.
+FetchContent_Declare(glad
+    GIT_REPOSITORY https://github.com/Dav1dde/glad.git
+    GIT_TAG        v0.1.36
+    GIT_SHALLOW    TRUE
+    SYSTEM
+    EXCLUDE_FROM_ALL
+)
 
-file(GLOB_RECURSE SOURCES "src/*.cpp")
+FetchContent_Declare(tinygltf
+    GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
+    GIT_TAG        v2.9.3
+    GIT_SHALLOW    TRUE
+    SYSTEM
+    EXCLUDE_FROM_ALL
+)
+
+# ImGui ships no CMakeLists, so this only downloads it.
+FetchContent_Declare(imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG        v1.91.5
+    GIT_SHALLOW    TRUE
+)
+
+FetchContent_MakeAvailable(glfw glm glad tinygltf imgui)
+
+set(OpenGL_GL_PREFERENCE GLVND)
+find_package(OpenGL REQUIRED)
+
+# -----------------------------------------------------
+# Dear ImGui (target name differs from the content name)
+# -----------------------------------------------------
+add_library(imgui_backend STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+)
+
+target_include_directories(imgui_backend SYSTEM PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+)
+
+# Route ImGui's GL calls through glad instead of its bundled imgl3w loader.
+target_compile_definitions(imgui_backend PUBLIC IMGUI_IMPL_OPENGL_LOADER_CUSTOM)
+target_link_libraries(imgui_backend PUBLIC glad glfw OpenGL::GL)
+if(MSVC)
+    target_compile_options(imgui_backend PRIVATE /FI"glad/glad.h")
+else()
+    target_compile_options(imgui_backend PRIVATE -include glad/glad.h)
+endif()
+
+# -----------------------------------------------------
+# Main Executable
+# -----------------------------------------------------
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
+)
 
 add_executable(ChiselEngine ${SOURCES})
 
-target_link_libraries(ChiselEngine PRIVATE glfw glm)
+target_include_directories(ChiselEngine PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
-target_include_directories(ChiselEngine PRIVATE src)
+target_compile_definitions(ChiselEngine PRIVATE GLFW_INCLUDE_NONE)
 
-# Copy Resources to build directory
-add_custom_command(TARGET ChiselEngine POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${CMAKE_SOURCE_DIR}/Resources"
-    "$<TARGET_FILE_DIR:ChiselEngine>/Resources")
+target_link_libraries(ChiselEngine PRIVATE
+    glad
+    glfw
+    glm::glm
+    tinygltf
+    OpenGL::GL
+    imgui_backend
+)
+
+if(WIN32)
+    target_compile_definitions(ChiselEngine PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+        _CRT_SECURE_NO_WARNINGS
+    )
+endif()
+
+if(MSVC)
+    target_compile_options(ChiselEngine PRIVATE /W4 /permissive-)
+    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                 PROPERTY VS_STARTUP_PROJECT ChiselEngine)
+else()
+    target_compile_options(ChiselEngine PRIVATE -Wall -Wextra)
+endif()
+
+# -----------------------------------------------------
+# Post-Build: Copy Resources
+# -----------------------------------------------------
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Resources)
+    add_custom_command(TARGET ChiselEngine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/Resources
+            $<TARGET_FILE_DIR:ChiselEngine>/Resources
+        COMMENT "Copying Resources next to the executable"
+    )
+endif()
