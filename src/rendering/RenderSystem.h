@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <memory>
 #include "scene/Node.h"
 #include "rendering/Light.h"
 #include "rendering/Shader.h"
@@ -18,5 +19,6 @@ public:
 private:
     RenderSystem() = default;
     std::vector<Light*> m_lights;
-    void traverseAndRender(Node* node, glm::mat4 parentTransform);
+    std::unique_ptr<Shader> m_shader;
+    void traverseAndRender(Node* node);
 };

@@ -8,6 +8,7 @@ public:
     Game();
     void start() override;
     void update(float deltaTime) override;
+    Node* getSceneRoot() const { return sceneRoot.get(); }
 
 private:
     std::unique_ptr<Node> sceneRoot;

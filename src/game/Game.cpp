@@ -13,19 +13,10 @@ void Game::start() {
     sun->setColor(glm::vec3(1.0f, 0.9f, 0.8f));
     RenderSystem::getInstance().addLight(sun);
 
-    /* Temporarily disabled until Assimp build issues are resolved
-    MeshNode* playerSword = GLBLoader::loadGLB("Resources/sword.glb");
-    if (playerSword) {
-        sceneRoot->addChild(std::unique_ptr<Node>(playerSword));
-        swordAnimator = new Animator(playerSword);
-    }
-    */
+    MeshNode* cube = GLBLoader::loadGLB("resources/cube.glb");
+    sceneRoot->addChild(std::unique_ptr<Node>(cube));
 }
 
 void Game::update(float deltaTime) {
-    // Simplified input check: in real engine use Input::isButtonPressed
-    bool buttonA = false; 
-    if (buttonA && swordAnimator) {
-        swordAnimator->playAnimation("Attack_Swing");
-    }
+    (void)deltaTime;
 }

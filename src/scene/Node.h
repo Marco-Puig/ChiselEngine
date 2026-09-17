@@ -29,6 +29,7 @@ public:
     const std::string& getName() const { return m_name; }
     void setPosition(glm::vec3 pos) { m_position = pos; }
     glm::vec3 getPosition() const { return m_position; }
+    const std::vector<std::unique_ptr<Node>>& getChildren() const { return m_children; }
 
 protected:
     std::string m_name;
