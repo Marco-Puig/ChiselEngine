@@ -78,12 +78,21 @@ body->setMass(5.0f);
 
 ---
 
-##  Quick Start for New Devs
-1. **Build**: \\
-```powershell
+## Quick Start for New Devs
+1. **Build**:
+
+   **Option A - batch scripts (Windows, recommended):**
+   ```
+   rebuild.bat
+   run.bat
+   ```
+   `rebuild.bat` wipes any existing `build` folder and does a clean configure + build. `run.bat` launches the built executable (defaults to Debug; pass `Release` for a release build, e.g. `run.bat Release`).
+
+   **Option B - run the commands yourself:**
+   ```powershell
    Remove-Item -Recurse -Force build
    cmake -B build "-DCMAKE_POLICY_VERSION_MINIMUM=3.6"
    cmake --build build
-```
+   ```
 2. **Configure**: Open the `DevUI` window and toggle **Simulated VR** to test without a headset.
 3. **Create**: Open `Game/Game.cpp` and start building your world!
