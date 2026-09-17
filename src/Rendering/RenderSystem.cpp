@@ -13,10 +13,18 @@ void RenderSystem::init() {
 }
 
 void RenderSystem::render(Node* rootNode) {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     const glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 4.0f),
                                        glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     const glm::mat4 proj = glm::perspective(glm::radians(45.0f), 1280.0f / 720.0f, 0.1f, 100.0f);
+    renderView(rootNode, view, proj, 0, 1280, 720);
+}
+
+void RenderSystem::renderView(Node* rootNode, const glm::mat4& view,
+                              const glm::mat4& proj, unsigned int framebuffer,
+                              int width, int height) {
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    glViewport(0, 0, width, height);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     m_shader->use();
     m_shader->setMat4("uView", view);
     m_shader->setMat4("uProjection", proj);

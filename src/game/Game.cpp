@@ -13,10 +13,15 @@ void Game::start() {
     sun->setColor(glm::vec3(1.0f, 0.9f, 0.8f));
     RenderSystem::getInstance().addLight(sun);
 
-    MeshNode* cube = GLBLoader::loadGLB("resources/cube.glb");
-    sceneRoot->addChild(std::unique_ptr<Node>(cube));
+    MeshNode* cubeMesh = GLBLoader::loadGLB("resources/cube.glb");
+    cube = cubeMesh;
+    sceneRoot->addChild(std::unique_ptr<Node>(cubeMesh));
+    animator = std::make_unique<Animator>(cube);
+    animator->procedural(cube, Axis::Y, Direction::Positive,
+                         TransformType::Rotation, glm::radians(45.0f));
 }
 
 void Game::update(float deltaTime) {
-    (void)deltaTime;
+    if (animator != nullptr)
+        animator->update(deltaTime);
 }

@@ -4,6 +4,7 @@
 #include "scene/Node.h"
 #include "rendering/Light.h"
 #include "rendering/Shader.h"
+#include <glm/glm.hpp>
 
 class RenderSystem {
 public:
@@ -14,6 +15,9 @@ public:
 
     void init();
     void render(Node* rootNode);
+    void renderView(Node* rootNode, const glm::mat4& view,
+                    const glm::mat4& projection, unsigned int framebuffer,
+                    int width, int height);
     void addLight(Light* light) { m_lights.push_back(light); }
 
 private:

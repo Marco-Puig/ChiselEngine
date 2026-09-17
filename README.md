@@ -68,7 +68,18 @@ void Game::update(float deltaTime) {
 }
 ```
 
-### 3. Physics Interaction
+### 3. Procedural animation
+
+`Animator::procedural` registers a continuous transform update in radians or world units per second:
+
+```cpp
+animator->procedural(cube, Axis::Y, Direction::Positive,
+                     TransformType::Rotation, glm::radians(45.0f));
+```
+
+The sample game uses this API to rotate the bundled cube every frame.
+
+### 4. Physics Interaction
 To make an object physical, simply wrap the node in a `PhysicsBody`.
 
 ```cpp
@@ -94,5 +105,9 @@ body->setMass(5.0f);
    cmake -B build "-DCMAKE_POLICY_VERSION_MINIMUM=3.6"
    cmake --build build
    ```
-2. **Configure**: Open the `DevUI` window and toggle **Simulated VR** to test without a headset.
+2. **Configure**: Open the `DevUI` window and toggle **Simulated VR** to test without a headset. OpenXR support is enabled by default; use `-DCHISEL_ENABLE_OPENXR=OFF` for a desktop-only build.
 3. **Create**: Open `Game/Game.cpp` and start building your world!
+
+When an OpenXR runtime and headset are available, the engine creates an OpenGL OpenXR session,
+locates both eye views, renders each eye into its swapchain, and submits a projection layer.
+Without a runtime, it automatically continues with the desktop GLFW framebuffer.
