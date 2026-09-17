@@ -78,7 +78,7 @@ body->setMass(5.0f);
 
 ---
 
-## Quick Start for New Devs
+## Quick Start
 1. **Build**:
 
    **Option A - batch scripts (Windows, recommended):**
