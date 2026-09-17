@@ -1,5 +1,5 @@
 # ChiselEngine
-**A Modular, High-Performance VR Engine for the Next Generation of Immersive Experiences.**
+**A easy to use and portable VR Game Engine.**
 
 ChiselEngine is a professional-grade VR game engine built on **OpenXR** and **OpenGL**. It is designed specifically to decouple the complex boilerplate of VR hardware and graphics rendering from the creative process of game development.
 
@@ -26,15 +26,15 @@ VR development is traditionally slow because of the "Headset Cycle" (Put on head
 
 | Module | Responsibility | Key Components |
 | :--- | :--- | :--- |
-| **Core** | The "Heartbeat" of the engine. Handles initialization, the main loop, and shutdown. | `engine.cpp`, `Game` class |
+| **Core** | The main part of the engine. Handles initialization, the main loop, and shutdown. | `engine.cpp`, `Game` class |
 | **Platform** | Interfaces with the OS and Windowing system. | `Window`, `DevUI`, `PhysicsSystem` |
-|, **XR** | Manages the VR Headset, controllers, and OpenXR session. | `XRManager`, `Swapchains` |
+| **XR** | Manages the VR Headset, controllers, and OpenXR session. | `XRManager`, `Swapchains` |
 | **Rendering**| The OpenGL pipeline. Handles shaders, buffers, and lighting. | `RenderSystem`, `Light`, `GLBLoader` |
 | **Scene** | High-level object management and animation. | `Node`, `MeshNode`, `Animator` |
 
 ---
 
-## 🛠 Developer's Guide: How to make a game
+## Developer's Guide: How to make a game
 
 As a developer, you don't touch the `Core`, `XR`, or `Rendering` modules. You spend 100% of your time in the **`Game`** class and the **`Scene`** module.
 
