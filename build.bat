@@ -2,25 +2,27 @@
 setlocal
 
 rem Run this from the project root (same folder as CMakeLists.txt).
+rem Optional first argument: build configuration, e.g. "build.bat Release".
 cd /d "%~dp0"
 
-if exist build (
-    echo Removing existing build folder...
-    rmdir /s /q build
-)
+set CONFIG=Debug
+if not "%~1"=="" set CONFIG=%~1
 
 echo Configuring...
-cmake -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.6
+cmake -B build "-DCMAKE_POLICY_VERSION_MINIMUM=3.11"
 if errorlevel 1 (
     echo Configure failed.
+    pause
     exit /b 1
 )
 
-echo Building...
-cmake --build build
+echo Building %CONFIG%...
+cmake --build build --config %CONFIG%
 if errorlevel 1 (
     echo Build failed.
+    pause
     exit /b 1
 )
 
-echo Done.
+echo Build completed successfully.
+echo Output: build\bin\%CONFIG%\ChiselEngine.exe

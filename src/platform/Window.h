@@ -10,9 +10,12 @@ public:
     bool shouldClose() const;
     void pollEvents();
     void swapBuffers();
+    void setResizeTarget(class ArcRotateCamera* camera);
+    class ArcRotateCamera* getResizeCamera() const { return m_resizeCamera; }
     
     GLFWwindow* getHandle() const { return m_window; }
 
 private:
     GLFWwindow* m_window;
+    class ArcRotateCamera* m_resizeCamera = nullptr;
 };

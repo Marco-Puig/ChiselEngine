@@ -29,12 +29,15 @@ XRManager::~XRManager() {
 
 bool XRManager::setSimulationMode(bool enabled, Window& window) {
     if (enabled == m_simulationRequested && (enabled || m_running))
-        return enabled || m_running;
+        return true;
     shutdown();
     m_simulationRequested = enabled;
     if (enabled)
         return true;
-    return init(window);
+    init(window);
+    // Keep the requested mode even when no OpenXR runtime is currently available.
+    // Rendering safely remains on the desktop path until a runtime can be initialized.
+    return true;
 }
 
 bool XRManager::init(Window& window) {
