@@ -1,8 +1,8 @@
 #include "Engine.h"
-#include "Rendering/RenderSystem.h"
-#include "Platform/DevUI.h"
+#include "rendering/RenderSystem.h"
+#include "platform/DevUI.h"
 #include "xr/XRManager.h"
-#include "Platform/PhysicsSystem.h"
+#include "platform/PhysicsSystem.h"
 #include "scene/ArcRotateCamera.h"
 #include <glad/glad.h>
 #include <chrono>

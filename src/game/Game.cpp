@@ -4,7 +4,7 @@
 #include "rendering/Light.h"
 #include "scene/MeshNode.h"
 #include "scene/Animator.h"
-#include "Platform/PhysicsSystem.h"
+#include "platform/PhysicsSystem.h"
 #include <glad/glad.h>
 #include <stdexcept>
 
@@ -52,7 +52,7 @@ void Game::start() {
     DirectionalLight* sun = new DirectionalLight("Sun", glm::vec3(-0.2f, -1.0f, -0.3f));
     sun->setColor(glm::vec3(1.0f, 0.9f, 0.8f));
     RenderSystem::getInstance().addLight(sun);
-    RenderSystem::getInstance().setSkyboxPath("resources/snow_skybox.jpg");
+    RenderSystem::getInstance().setSkyboxPath("resources/skybox.jpg");
     camera->setTarget(glm::vec3(0.0f, 0.5f, 0.0f));
     camera->setLimits(2.0f, 30.0f);
 
@@ -68,7 +68,7 @@ void Game::start() {
     if (floorBody == nullptr)
         throw std::runtime_error("Failed to create the dummy plane collision body");
 
-    MeshNode* cubeMesh = GLBLoader::loadGLB("resources/cube.glb");
+    MeshNode* cubeMesh = GLBLoader::loadGLB("resources/frog.glb");
     cube = cubeMesh;
     cube->setPosition(glm::vec3(0.0f, 3.0f, 0.0f));
     sceneRoot->addChild(std::unique_ptr<Node>(cubeMesh));
