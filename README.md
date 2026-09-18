@@ -3,6 +3,8 @@
 
 ChiselEngine is a professional-grade VR game engine built on **OpenXR** and **OpenGL**. It is designed specifically to decouple the complex boilerplate of VR hardware and graphics rendering from the creative process of game development.
 
+<img width="1260" height="703" alt="image" src="https://github.com/user-attachments/assets/d6f94bad-e57a-4b24-97fc-9f1e13060c40" />
+
 ---
 
 ## Design Philosophy
