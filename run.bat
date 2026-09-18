@@ -8,6 +8,13 @@ cd /d "%~dp0"
 set CONFIG=Debug
 if not "%~1"=="" set CONFIG=%~1
 
+echo Building %CONFIG% ...
+cmake --build build --config %CONFIG%
+if errorlevel 1 (
+    echo Build failed.
+    exit /b 1
+)
+
 set EXE=
 
 if exist "build\bin\%CONFIG%\ChiselEngine.exe" set EXE=build\bin\%CONFIG%\ChiselEngine.exe

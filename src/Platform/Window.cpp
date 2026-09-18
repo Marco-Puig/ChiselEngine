@@ -1,6 +1,24 @@
 #include "Window.h"
 #include <glad/glad.h>
 #include <stdexcept>
+#include <algorithm>
+#include "scene/ArcRotateCamera.h"
+
+namespace {
+void framebufferSizeCallback(GLFWwindow* handle, int width, int height) {
+    glViewport(0, 0, width, height);
+    auto* window = static_cast<Window*>(glfwGetWindowUserPointer(handle));
+    if (window != nullptr && window->getResizeCamera() != nullptr)
+        window->getResizeCamera()->setAspectRatio(
+            static_cast<float>(width) / static_cast<float>(std::max(height, 1)));
+}
+
+void scrollCallback(GLFWwindow* handle, double, double yOffset) {
+    auto* window = static_cast<Window*>(glfwGetWindowUserPointer(handle));
+    if (window != nullptr && window->getResizeCamera() != nullptr)
+        window->getResizeCamera()->addScroll(yOffset);
+}
+}
 
 Window::Window(int width, int height, const std::string& title) {
     if (!glfwInit()) {
@@ -18,6 +36,9 @@ Window::Window(int width, int height, const std::string& title) {
     }
 
     glfwMakeContextCurrent(m_window);
+    glfwSetWindowUserPointer(m_window, this);
+    glfwSetFramebufferSizeCallback(m_window, framebufferSizeCallback);
+    glfwSetScrollCallback(m_window, scrollCallback);
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) {
         glfwDestroyWindow(m_window);
         glfwTerminate();
@@ -40,4 +61,15 @@ void Window::pollEvents() {
 
 void Window::swapBuffers() {
     glfwSwapBuffers(m_window);
+}
+
+void Window::setResizeTarget(ArcRotateCamera* camera) {
+    m_resizeCamera = camera;
+    glfwSetFramebufferSizeCallback(m_window, framebufferSizeCallback);
+    glfwSetScrollCallback(m_window, scrollCallback);
+    int width = 1;
+    int height = 1;
+    glfwGetFramebufferSize(m_window, &width, &height);
+    if (camera != nullptr)
+        camera->setAspectRatio(static_cast<float>(width) / static_cast<float>(std::max(height, 1)));
 }

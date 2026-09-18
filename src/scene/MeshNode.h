@@ -21,9 +21,18 @@ public:
 
     unsigned int getVAO() const { return m_vao; }
     int getIndexCount() const { return m_indexCount; }
+    void setBounds(const glm::vec3& minimum, const glm::vec3& maximum) {
+        m_boundsMin = minimum;
+        m_boundsMax = maximum;
+    }
+    glm::vec3 getBoundsMin() const { return m_boundsMin; }
+    glm::vec3 getBoundsMax() const { return m_boundsMax; }
+    glm::vec3 getBoundsSize() const { return m_boundsMax - m_boundsMin; }
 
 private:
     unsigned int m_vao, m_vbo, m_ebo;
     int m_indexCount = 0;
+    glm::vec3 m_boundsMin{0.0f};
+    glm::vec3 m_boundsMax{0.0f};
     // Reference to Material/Shader will be added in Step 4
 };

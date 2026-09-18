@@ -6,6 +6,8 @@
 #include <iterator>
 #include <stdexcept>
 #include <vector>
+#include <limits>
+#include <glm/glm.hpp>
 
 MeshNode* GLBLoader::loadGLB(const std::string& path) {
     tinygltf::Model model;
@@ -44,6 +46,8 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
 
     std::vector<float> vertices;
     std::vector<unsigned int> indices;
+    glm::vec3 boundsMin(std::numeric_limits<float>::max());
+    glm::vec3 boundsMax(std::numeric_limits<float>::lowest());
     for (const auto& primitive : model.meshes.front().primitives) {
         const auto positionIt = primitive.attributes.find("POSITION");
         if (positionIt == primitive.attributes.end())
@@ -58,6 +62,8 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
         for (size_t i = 0; i < position.count; ++i) {
             const float* value = reinterpret_cast<const float*>(data + i * stride);
             vertices.insert(vertices.end(), value, value + 3);
+            boundsMin = glm::min(boundsMin, glm::vec3(value[0], value[1], value[2]));
+            boundsMax = glm::max(boundsMax, glm::vec3(value[0], value[1], value[2]));
         }
 
         if (primitive.indices < 0)
@@ -98,5 +104,6 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
 
     auto* mesh = new MeshNode("GLB:" + path);
     mesh->setMesh(vao, vbo, ebo, static_cast<int>(indices.size()));
+    mesh->setBounds(boundsMin, boundsMax);
     return mesh;
 }

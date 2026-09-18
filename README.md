@@ -27,7 +27,7 @@ VR development is traditionally slow because of the "Headset Cycle" (Put on head
 | Module | Responsibility | Key Components |
 | :--- | :--- | :--- |
 | **Core** | The "Heartbeat" of the engine. Handles initialization, the main loop, and shutdown. | `engine.cpp`, `Game` class |
-| **Platform** | Interfaces with the OS and Windowing system. | `Window`, `DevUI`, `PhysicsSystem` |
+| **Platform** | Interfaces with the OS, windowing, and physics systems. | `Window`, `DevUI`, `PhysicsSystem` |
 |, **XR** | Manages the VR Headset, controllers, and OpenXR session. | `XRManager`, `Swapchains` |
 | **Rendering**| The OpenGL pipeline. Handles shaders, buffers, and lighting. | `RenderSystem`, `Light`, `GLBLoader` |
 | **Scene** | High-level object management and animation. | `Node`, `MeshNode`, `Animator` |
@@ -83,7 +83,8 @@ The sample game uses this API to rotate the bundled cube every frame.
 To make an object physical, simply wrap the node in a `PhysicsBody`.
 
 ```cpp
-PhysicsBody* body = PhysicsSystem::getInstance().createRigidBody(rockNode, BodyType::Dynamic);
+PhysicsBody* body = PhysicsSystem::getInstance().createRigidBody(rockNode, BodyType::Dynamic,
+                                                                  glm::vec3(1.0f));
 body->setMass(5.0f);
 ```
 
@@ -111,3 +112,8 @@ body->setMass(5.0f);
 When an OpenXR runtime and headset are available, the engine creates an OpenGL OpenXR session,
 locates both eye views, renders each eye into its swapchain, and submits a projection layer.
 Without a runtime, it automatically continues with the desktop GLFW framebuffer.
+
+Jolt Physics is enabled by default and advances at a fixed 60 Hz timestep using an accumulator.
+The demo loads `resources/plane.glb` as a static floor and `resources/cube.glb` as a dynamic body.
+If `plane.glb` is not present, the demo uses a scaled cube as a temporary floor. Collision wireframes
+are disabled by default and can be enabled with **Show Collision Debug** in the developer window.

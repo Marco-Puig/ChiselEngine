@@ -2,6 +2,7 @@
 #include "Window.h"
 #include "core/Version.h"
 #include "xr/XRManager.h"
+#include "PhysicsSystem.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -32,7 +33,7 @@ void DevUI::init(Window& window) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
-    ImGui_ImplGlfw_InitForOpenGL(window.getHandle(), false);
+    ImGui_ImplGlfw_InitForOpenGL(window.getHandle(), true);
     ImGui_ImplOpenGL3_Init("#version 450 core");
     querySystemInfo();
     m_initialized = true;
@@ -59,9 +60,24 @@ void DevUI::render(Window& window, XRManager& xr, float deltaTime) {
     if (!m_initialized)
         return;
 
-    m_frameTimeMs = deltaTime * 1000.0f;
-    if (deltaTime > 0.0f)
-        m_fps = 1.0f / deltaTime;
+    if (!m_modeInitialized) {
+        m_simulatedVR = xr.isSimulated();
+        m_modeInitialized = true;
+    }
+
+    m_displayAccumulator += deltaTime;
+    m_pendingFrameTimeMs = deltaTime * 1000.0f;
+    m_intervalTime += deltaTime;
+    ++m_intervalFrames;
+    if (m_intervalTime > 0.0f)
+        m_pendingFps = static_cast<float>(m_intervalFrames) / m_intervalTime;
+    if (m_displayAccumulator >= 0.25f) {
+        m_frameTimeMs = m_pendingFrameTimeMs;
+        m_fps = m_pendingFps;
+        m_displayAccumulator = 0.0f;
+        m_intervalTime = 0.0f;
+        m_intervalFrames = 0;
+    }
 
     const bool f1Down = glfwGetKey(window.getHandle(), GLFW_KEY_F1) == GLFW_PRESS;
     if (f1Down && !m_toggleKeyWasDown)
@@ -82,18 +98,17 @@ void DevUI::render(Window& window, XRManager& xr, float deltaTime) {
         ImGui::Text("OS: %s", m_osName.c_str());
         ImGui::Separator();
 
-        bool simulated = xr.isSimulated();
-        const bool modeBeforeEdit = simulated;
-        if (ImGui::Checkbox("Simulated VR", &simulated) && simulated != modeBeforeEdit) {
-            if (xr.setSimulationMode(simulated, window))
-                m_simulatedVR = simulated;
-            else
-                m_simulatedVR = true;
-        } else {
-            m_simulatedVR = simulated;
-        }
+        if (ImGui::Checkbox("Simulated VR", &m_simulatedVR))
+            xr.setSimulationMode(m_simulatedVR, window);
         ImGui::SameLine();
-        ImGui::TextUnformatted(m_simulatedVR ? "Desktop stereo simulation" : "OpenXR runtime");
+        if (m_simulatedVR)
+            ImGui::TextUnformatted("Desktop stereo simulation");
+        else if (xr.isRunning())
+            ImGui::TextUnformatted("OpenXR runtime");
+        else
+            ImGui::TextUnformatted("OpenXR unavailable; desktop fallback");
+        if (ImGui::Checkbox("Show Collision Debug", &m_showCollisionDebug))
+            PhysicsSystem::getInstance().setDebugDrawEnabled(m_showCollisionDebug);
         ImGui::Text("Press F1 to toggle this window");
         ImGui::End();
     }

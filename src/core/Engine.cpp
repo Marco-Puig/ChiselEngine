@@ -2,6 +2,8 @@
 #include "Rendering/RenderSystem.h"
 #include "Platform/DevUI.h"
 #include "xr/XRManager.h"
+#include "Platform/PhysicsSystem.h"
+#include "scene/ArcRotateCamera.h"
 #include <glad/glad.h>
 #include <chrono>
 
@@ -9,11 +11,18 @@ void Engine::init() {
     m_window = std::make_unique<Window>(1280, 720, "ChiselEngine");
     RenderSystem::getInstance().init();
     XRManager::getInstance().init(*m_window);
+    PhysicsSystem::getInstance().init();
     DevUI::getInstance().init(*m_window);
 }
 
 void Engine::run(IGame* game) {
     game->start();
+    XRManager& xr = XRManager::getInstance();
+    if (game->getCamera() != nullptr) {
+        game->getCamera()->attach(*m_window);
+        m_window->setResizeTarget(game->getCamera());
+        RenderSystem::getInstance().setDesktopCamera(game->getCamera());
+    }
     
     auto lastTime = std::chrono::high_resolution_clock::now();
     
@@ -25,7 +34,7 @@ void Engine::run(IGame* game) {
         m_window->pollEvents();
         DevUI::getInstance().beginFrame();
         game->update(dt);
-        XRManager& xr = XRManager::getInstance();
+        PhysicsSystem::getInstance().update(dt);
         xr.syncActions();
         if (xr.beginFrame()) {
             for (uint32_t eye = 0; eye < 2; ++eye) {
@@ -62,4 +71,8 @@ void Engine::run(IGame* game) {
         DevUI::getInstance().render(*m_window, xr, dt);
         m_window->swapBuffers();
     }
+
+    DevUI::getInstance().shutdown();
+    PhysicsSystem::getInstance().shutdown();
+    xr.shutdown();
 }
