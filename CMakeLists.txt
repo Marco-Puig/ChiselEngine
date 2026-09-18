@@ -72,6 +72,22 @@ FetchContent_Declare(imgui
     GIT_SHALLOW    TRUE
 )
 
+FetchContent_Declare(imguizmo
+    GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git
+    GIT_TAG        master
+    GIT_SHALLOW    TRUE
+    SYSTEM
+    EXCLUDE_FROM_ALL
+)
+
+FetchContent_Declare(stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        master
+    GIT_SHALLOW    TRUE
+    SYSTEM
+    EXCLUDE_FROM_ALL
+)
+
 if(CHISEL_ENABLE_OPENXR)
     FetchContent_Declare(openxr
         GIT_REPOSITORY https://github.com/KhronosGroup/OpenXR-SDK-Source.git
@@ -95,7 +111,7 @@ if(CHISEL_ENABLE_JOLT)
     )
 endif()
 
-FetchContent_MakeAvailable(glfw glm glad tinygltf imgui)
+FetchContent_MakeAvailable(glfw glm glad tinygltf imgui imguizmo stb)
 if(CHISEL_ENABLE_OPENXR)
     set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(openxr)
@@ -131,6 +147,7 @@ target_include_directories(imgui_backend SYSTEM PUBLIC
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
 )
+target_include_directories(imgui_backend SYSTEM PRIVATE ${imguizmo_SOURCE_DIR}/src)
 
 # Route ImGui's GL calls through glad instead of its bundled imgl3w loader.
 target_compile_definitions(imgui_backend PUBLIC IMGUI_IMPL_OPENGL_LOADER_CUSTOM)
@@ -152,9 +169,11 @@ add_executable(ChiselEngine ${SOURCES})
 
 target_include_directories(ChiselEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${imguizmo_SOURCE_DIR}/src
+    ${stb_SOURCE_DIR}
 )
 
-target_compile_definitions(ChiselEngine PRIVATE GLFW_INCLUDE_NONE)
+target_compile_definitions(ChiselEngine PRIVATE GLFW_INCLUDE_NONE IMGUI_DEFINE_MATH_OPERATORS)
 if(CHISEL_ENABLE_OPENXR)
     target_compile_definitions(ChiselEngine PRIVATE
         CHISEL_ENABLE_OPENXR
@@ -179,6 +198,7 @@ target_link_libraries(ChiselEngine PRIVATE
     OpenGL::GL
     imgui_backend
 )
+target_sources(ChiselEngine PRIVATE ${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp)
 
 if(WIN32)
     target_compile_definitions(ChiselEngine PRIVATE

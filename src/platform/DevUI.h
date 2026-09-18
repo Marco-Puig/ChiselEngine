@@ -3,6 +3,8 @@
 
 class Window;
 class XRManager;
+class Node;
+class ArcRotateCamera;
 
 class DevUI {
 public:
@@ -11,7 +13,8 @@ public:
     void init(Window& window);
     void shutdown();
     void beginFrame();
-    void render(Window& window, XRManager& xr, float deltaTime);
+    void render(Window& window, XRManager& xr, Node* sceneRoot,
+                ArcRotateCamera* camera, float deltaTime);
     bool isVisible() const { return m_visible; }
 
 private:
@@ -35,6 +38,8 @@ private:
     float m_intervalTime = 0.0f;
     uint32_t m_intervalFrames = 0;
     bool m_showCollisionDebug = false;
+    Node* m_selectedNode = nullptr;
+    int m_gizmoOperation = 0;
     std::string m_gpuName;
     std::string m_gpuMemory;
     std::string m_cpuName;

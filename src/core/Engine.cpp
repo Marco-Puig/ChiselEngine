@@ -68,7 +68,8 @@ void Engine::run(IGame* game) {
             RenderSystem::getInstance().render(game->getSceneRoot());
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        DevUI::getInstance().render(*m_window, xr, dt);
+        DevUI::getInstance().render(*m_window, xr, game->getSceneRoot(),
+                                    game->getCamera(), dt);
         m_window->swapBuffers();
     }
 

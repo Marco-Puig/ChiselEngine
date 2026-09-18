@@ -126,6 +126,7 @@ void PhysicsSystem::init() {
     m_jobSystem = new JPH::JobSystemThreadPool(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers);
     m_physicsSystem.Init(10240, 0, 10240, 10240, gBroadPhaseLayers,
                          gObjectVsBroadPhase, gObjectLayerPair);
+    m_physicsSystem.SetGravity(JPH::Vec3(0.0f, -9.81f, 0.0f));
 #endif
     m_initialized = true;
 }
@@ -155,10 +156,13 @@ PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
 #ifdef CHISEL_ENABLE_JOLT
     const glm::vec3 safeSize = glm::max(size, glm::vec3(0.01f));
     JPH::BoxShapeSettings shapeSettings(
-        JPH::Vec3(safeSize.x * 0.5f, safeSize.y * 0.5f, safeSize.z * 0.5f));
+        JPH::Vec3(safeSize.x * 0.5f, safeSize.y * 0.5f, safeSize.z * 0.5f),
+        0.0f);
     const JPH::ShapeSettings::ShapeResult shape = shapeSettings.Create();
-    if (shape.HasError())
+    if (shape.HasError()) {
+        std::cerr << "Jolt shape creation failed: " << shape.GetError() << std::endl;
         return nullptr;
+    }
     const JPH::EMotionType motion = type == BodyType::Static ? JPH::EMotionType::Static :
         type == BodyType::Kinematic ? JPH::EMotionType::Kinematic : JPH::EMotionType::Dynamic;
     const JPH::ObjectLayer layer = motion == JPH::EMotionType::Static ? cNonMoving : cMoving;
@@ -172,8 +176,10 @@ PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
     const JPH::BodyID bodyID = m_physicsSystem.GetBodyInterface().CreateAndAddBody(
         settings, motion == JPH::EMotionType::Static ? JPH::EActivation::DontActivate :
         JPH::EActivation::Activate);
-    if (bodyID.IsInvalid())
+    if (bodyID.IsInvalid()) {
+        std::cerr << "Jolt rigid body creation failed" << std::endl;
         return nullptr;
+    }
     result->m_bodyID = bodyID;
 #else
     (void)friction;
