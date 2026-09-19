@@ -9,8 +9,115 @@
 #include <vector>
 #include <limits>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace {
+struct SceneMeshInstance {
+    int mesh = -1;
+    glm::mat4 transform{1.0f};
+};
+
+glm::mat4 nodeTransform(const tinygltf::Node& node) {
+    if (node.matrix.size() == 16) {
+        glm::mat4 result(1.0f);
+        for (int column = 0; column < 4; ++column)
+            for (int row = 0; row < 4; ++row)
+                result[column][row] =
+                    static_cast<float>(node.matrix[column * 4 + row]);
+        return result;
+    }
+
+    glm::vec3 translation(0.0f);
+    if (node.translation.size() == 3)
+        translation = glm::vec3(static_cast<float>(node.translation[0]),
+                                static_cast<float>(node.translation[1]),
+                                static_cast<float>(node.translation[2]));
+
+    glm::quat rotation(1.0f, 0.0f, 0.0f, 0.0f);
+    if (node.rotation.size() == 4)
+        rotation = glm::quat(static_cast<float>(node.rotation[3]),
+                             static_cast<float>(node.rotation[0]),
+                             static_cast<float>(node.rotation[1]),
+                             static_cast<float>(node.rotation[2]));
+
+    glm::vec3 scale(1.0f);
+    if (node.scale.size() == 3)
+        scale = glm::vec3(static_cast<float>(node.scale[0]),
+                          static_cast<float>(node.scale[1]),
+                          static_cast<float>(node.scale[2]));
+
+    return glm::translate(glm::mat4(1.0f), translation) *
+           glm::mat4_cast(rotation) *
+           glm::scale(glm::mat4(1.0f), scale);
+}
+
+void collectSceneMeshInstances(const tinygltf::Model& model, int nodeIndex,
+                               const glm::mat4& parentTransform,
+                               std::vector<SceneMeshInstance>& instances) {
+    if (nodeIndex < 0 || nodeIndex >= static_cast<int>(model.nodes.size())) {
+        std::cerr << "GLB scene references invalid node index " << nodeIndex << '\n';
+        return;
+    }
+    const tinygltf::Node& node = model.nodes[nodeIndex];
+    const glm::mat4 worldTransform = parentTransform * nodeTransform(node);
+    if (node.mesh >= 0)
+        instances.push_back({node.mesh, worldTransform});
+    for (int child : node.children)
+        collectSceneMeshInstances(model, child, worldTransform, instances);
+}
+
+void collectDefaultSceneMeshInstances(const tinygltf::Model& model,
+                                      std::vector<SceneMeshInstance>& instances) {
+    if (model.defaultScene >= 0 &&
+        model.defaultScene < static_cast<int>(model.scenes.size())) {
+        for (int node : model.scenes[model.defaultScene].nodes)
+            collectSceneMeshInstances(model, node, glm::mat4(1.0f), instances);
+    }
+}
+
+std::vector<glm::vec3> readMeshPositions(const tinygltf::Model& model,
+                                         int meshIndex,
+                                         const std::string& path) {
+    std::vector<glm::vec3> result;
+    if (meshIndex < 0 || meshIndex >= static_cast<int>(model.meshes.size()))
+        return result;
+    for (const auto& primitive : model.meshes[meshIndex].primitives) {
+        const auto positionIt = primitive.attributes.find("POSITION");
+        if (positionIt == primitive.attributes.end() ||
+            positionIt->second < 0 ||
+            positionIt->second >= static_cast<int>(model.accessors.size()))
+            continue;
+        const tinygltf::Accessor& accessor = model.accessors[positionIt->second];
+        if (accessor.bufferView < 0 ||
+            accessor.bufferView >= static_cast<int>(model.bufferViews.size()))
+            continue;
+        const tinygltf::BufferView& view = model.bufferViews[accessor.bufferView];
+        if (view.buffer < 0 ||
+            view.buffer >= static_cast<int>(model.buffers.size()))
+            continue;
+        const tinygltf::Buffer& buffer = model.buffers[view.buffer];
+        const size_t stride = accessor.ByteStride(view) != 0
+            ? accessor.ByteStride(view) : sizeof(float) * 3;
+        const size_t start = view.byteOffset + accessor.byteOffset;
+        if (stride < sizeof(float) * 3 ||
+            start > buffer.data.size() ||
+            accessor.count > (buffer.data.size() - start) / stride) {
+            std::cerr << "GLB POSITION accessor exceeds its buffer: "
+                      << path << '\n';
+            continue;
+        }
+        const unsigned char* data = buffer.data.data() + start;
+        for (size_t i = 0; i < accessor.count; ++i) {
+            const float* value =
+                reinterpret_cast<const float*>(data + i * stride);
+            result.emplace_back(value[0], value[1], value[2]);
+        }
+    }
+    return result;
+}
+
 GLuint createTexture(const tinygltf::Image& image, bool srgb) {
     if (image.image.empty() || image.width <= 0 || image.height <= 0)
         return 0;
@@ -129,10 +236,24 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
 
     if (model.meshes.empty())
         throw std::runtime_error("GLB contains no renderable mesh: " + path);
+    std::vector<SceneMeshInstance> sceneInstances;
+    collectDefaultSceneMeshInstances(model, sceneInstances);
+    if (sceneInstances.empty()) {
+        for (size_t i = 0; i < model.meshes.size(); ++i)
+            sceneInstances.push_back({static_cast<int>(i), glm::mat4(1.0f)});
+        std::cerr << "GLB has no mesh nodes in its default scene; checking all meshes\n";
+    }
     const int meshIndex = findPrimarySceneMesh(model);
     if (meshIndex < 0 || model.meshes[meshIndex].primitives.empty())
         throw std::runtime_error("GLB scene contains no valid renderable mesh: " + path);
     const tinygltf::Mesh& sourceMesh = model.meshes[meshIndex];
+    glm::mat4 sourceTransform(1.0f);
+    for (const SceneMeshInstance& instance : sceneInstances) {
+        if (instance.mesh == meshIndex) {
+            sourceTransform = instance.transform;
+            break;
+        }
+    }
 
     std::vector<float> vertices;
     std::vector<glm::vec3> positions;
@@ -177,9 +298,11 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
         const unsigned char* data = positionBuffer.data.data() + positionStart;
         for (size_t i = 0; i < position.count; ++i) {
             const float* value = reinterpret_cast<const float*>(data + i * stride);
-            positions.emplace_back(value[0], value[1], value[2]);
-            boundsMin = glm::min(boundsMin, glm::vec3(value[0], value[1], value[2]));
-            boundsMax = glm::max(boundsMax, glm::vec3(value[0], value[1], value[2]));
+            const glm::vec3 transformed =
+                glm::vec3(sourceTransform * glm::vec4(value[0], value[1], value[2], 1.0f));
+            positions.push_back(transformed);
+            boundsMin = glm::min(boundsMin, transformed);
+            boundsMax = glm::max(boundsMax, transformed);
         }
 
         const auto normalIt = primitive.attributes.find("NORMAL");
@@ -189,9 +312,12 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
             const tinygltf::Buffer& buffer = model.buffers.at(view.buffer);
             const size_t normalStride = normal.ByteStride(view) != 0 ? normal.ByteStride(view) : sizeof(float) * 3;
             const unsigned char* normalData = buffer.data.data() + view.byteOffset + normal.byteOffset;
+            const glm::mat3 normalTransform =
+                glm::transpose(glm::inverse(glm::mat3(sourceTransform)));
             for (size_t i = 0; i < normal.count; ++i) {
                 const float* value = reinterpret_cast<const float*>(normalData + i * normalStride);
-                sourceNormals.emplace_back(value[0], value[1], value[2]);
+                sourceNormals.push_back(glm::normalize(
+                    normalTransform * glm::vec3(value[0], value[1], value[2])));
             }
         } else {
             sourceNormals.resize(positions.size(), glm::vec3(0.0f));
@@ -293,7 +419,19 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
     auto* mesh = new MeshNode("GLB:" + path);
     mesh->setMesh(vao, vbo, ebo, static_cast<int>(indices.size()), true);
     mesh->setBounds(boundsMin, boundsMax);
-    mesh->setCollisionVertices(positions);
+    std::vector<glm::vec3> collisionVertices;
+    for (const SceneMeshInstance& instance : sceneInstances) {
+        const std::vector<glm::vec3> sourcePositions =
+            readMeshPositions(model, instance.mesh, path);
+        for (const glm::vec3& point : sourcePositions) {
+            const glm::vec3 transformed =
+                glm::vec3(instance.transform * glm::vec4(point, 1.0f));
+            collisionVertices.push_back(transformed);
+        }
+    }
+    if (collisionVertices.empty())
+        collisionVertices = positions;
+    mesh->setCollisionVertices(std::move(collisionVertices));
     if (firstMaterialIndex >= 0 &&
         firstMaterialIndex < static_cast<int>(model.materials.size())) {
         const tinygltf::Material& source = model.materials[firstMaterialIndex];

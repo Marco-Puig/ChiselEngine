@@ -5,6 +5,7 @@
 #include <iostream>
 #include <cstdarg>
 #include <cstdio>
+#include <cmath>
 #include <exception>
 #ifdef _WIN32
 #include <windows.h>
@@ -138,18 +139,25 @@ void PhysicsBody::syncToPhysics() {
         JPH::Quat(m_node->getRotation().x, m_node->getRotation().y,
                   m_node->getRotation().z, m_node->getRotation().w),
         JPH::EActivation::DontActivate);
+    if (m_type != BodyType::Dynamic)
+        PhysicsSystem::getInstance().wakeDynamicBodies();
 #endif
 }
 
 void PhysicsBody::beginEditorManipulation() {
 #ifdef CHISEL_ENABLE_JOLT
-    if (m_bodyID.IsInvalid() || m_type != BodyType::Dynamic)
+    if (m_bodyID.IsInvalid())
         return;
     auto& bodyInterface = PhysicsSystem::getInstance().m_physicsSystem.GetBodyInterface();
-    bodyInterface.SetLinearVelocity(m_bodyID, JPH::Vec3::sZero());
-    bodyInterface.SetAngularVelocity(m_bodyID, JPH::Vec3::sZero());
-    bodyInterface.SetMotionType(m_bodyID, JPH::EMotionType::Kinematic,
-                                JPH::EActivation::DontActivate);
+    if (m_type == BodyType::Dynamic) {
+        bodyInterface.SetLinearVelocity(m_bodyID, JPH::Vec3::sZero());
+        bodyInterface.SetAngularVelocity(m_bodyID, JPH::Vec3::sZero());
+        bodyInterface.SetMotionType(m_bodyID, JPH::EMotionType::Kinematic,
+                                    JPH::EActivation::DontActivate);
+    } else {
+        // Jolt does not wake sleeping dynamic bodies when static geometry moves.
+        PhysicsSystem::getInstance().wakeDynamicBodies();
+    }
 #endif
 }
 
@@ -167,8 +175,13 @@ void PhysicsBody::endEditorManipulation() {
 
 void PhysicsBody::appendDebugLines(std::vector<PhysicsDebugLine>& lines) const {
 #ifdef CHISEL_ENABLE_JOLT
+    const char* debugStage = "validation";
+#if defined(_CPPUNWIND)
+    try {
+#endif
     if (m_node == nullptr || m_bodyID.IsInvalid() || m_shape == nullptr)
         return;
+    debugStage = "body registration";
     const auto& bodyInterface =
         PhysicsSystem::getInstance().m_physicsSystem.GetBodyInterface();
     if (!bodyInterface.IsAdded(m_bodyID)) {
@@ -179,6 +192,7 @@ void PhysicsBody::appendDebugLines(std::vector<PhysicsDebugLine>& lines) const {
         }
         return;
     }
+    debugStage = "body transform";
     JPH::RVec3 position;
     JPH::Quat rotation;
     bodyInterface.GetPositionAndRotation(m_bodyID, position, rotation);
@@ -186,6 +200,7 @@ void PhysicsBody::appendDebugLines(std::vector<PhysicsDebugLine>& lines) const {
     const glm::vec3 center(static_cast<float>(position.GetX()),
                            static_cast<float>(position.GetY()),
                            static_cast<float>(position.GetZ()));
+    debugStage = "shape subtype";
     if (m_shape->GetSubType() != JPH::EShapeSubType::ConvexHull) {
         if (!m_debugWarningLogged) {
             std::cerr << "[Physics] Skipping collision debug for unsupported "
@@ -194,12 +209,19 @@ void PhysicsBody::appendDebugLines(std::vector<PhysicsDebugLine>& lines) const {
         }
         return;
     }
-    if (const auto* hull = dynamic_cast<const JPH::ConvexHullShape*>(m_shape.GetPtr())) {
+    debugStage = "convex hull cast";
+    // The subtype check above is Jolt's runtime type check. Avoid C++ RTTI here:
+    // Jolt may be built with different RTTI settings than the engine.
+    const auto* hull = static_cast<const JPH::ConvexHullShape*>(m_shape.GetPtr());
+    if (hull != nullptr) {
+        debugStage = "convex hull faces";
         for (uint32_t faceIndex = 0; faceIndex < hull->GetNumFaces(); ++faceIndex) {
+            debugStage = "face vertex count";
             const uint32_t count = hull->GetNumVerticesInFace(faceIndex);
             if (count < 2)
                 continue;
             std::vector<uint32_t> face(count);
+            debugStage = "face vertex indices";
             const uint32_t written = hull->GetFaceVertices(
                 faceIndex, count, face.data());
             if (written != count)
@@ -214,14 +236,60 @@ void PhysicsBody::appendDebugLines(std::vector<PhysicsDebugLine>& lines) const {
                     }
                     break;
                 }
+                debugStage = "hull point access";
                 const JPH::Vec3 a = hull->GetPoint(face[i]);
                 const JPH::Vec3 b = hull->GetPoint(face[(i + 1) % count]);
                 const glm::vec3 from = center + q * glm::vec3(a.GetX(), a.GetY(), a.GetZ());
                 const glm::vec3 to = center + q * glm::vec3(b.GetX(), b.GetY(), b.GetZ());
+                if (!std::isfinite(from.x) || !std::isfinite(from.y) ||
+                    !std::isfinite(from.z) || !std::isfinite(to.x) ||
+                    !std::isfinite(to.y) || !std::isfinite(to.z)) {
+                    if (!m_debugWarningLogged) {
+                        std::cerr << "[Physics] Skipping collision debug face with "
+                                     "non-finite vertex data\n";
+                        m_debugWarningLogged = true;
+                    }
+                    break;
+                }
                 lines.push_back({from, to});
             }
         }
+    } else if (!m_debugWarningLogged) {
+        std::cerr << "[Physics] Collision debug shape subtype is ConvexHull but "
+                     "the concrete hull cast failed for node '"
+                  << m_node->getName() << "'\n";
+        m_debugWarningLogged = true;
     }
+#if defined(_CPPUNWIND)
+    } catch (const std::exception&) {
+        throw;
+    } catch (const std::string& error) {
+        if (!m_debugExceptionLogged) {
+            std::cerr << "[Physics] Collision debug string exception for node '"
+                      << (m_node != nullptr ? m_node->getName() : "<null>")
+                      << "' during " << debugStage << ": " << error << '\n';
+            m_debugExceptionLogged = true;
+        }
+        throw;
+    } catch (const char* error) {
+        if (!m_debugExceptionLogged) {
+            std::cerr << "[Physics] Collision debug C-string exception for node '"
+                      << (m_node != nullptr ? m_node->getName() : "<null>")
+                      << "' during " << debugStage << ": "
+                      << (error != nullptr ? error : "<null>") << '\n';
+            m_debugExceptionLogged = true;
+        }
+        throw;
+    } catch (...) {
+        if (!m_debugExceptionLogged) {
+            std::cerr << "[Physics] Collision debug unknown exception for node '"
+                      << (m_node != nullptr ? m_node->getName() : "<null>")
+                      << "' during " << debugStage << '\n';
+            m_debugExceptionLogged = true;
+        }
+        throw;
+    }
+#endif
 #else
     (void)lines;
 #endif
@@ -242,6 +310,18 @@ void PhysicsSystem::endEditorManipulation(Node* node) {
     for (auto& body : m_bodies)
         if (body != nullptr && body->m_node == node)
             body->endEditorManipulation();
+}
+
+void PhysicsSystem::wakeDynamicBodies() {
+#ifdef CHISEL_ENABLE_JOLT
+    auto& bodyInterface = m_physicsSystem.GetBodyInterface();
+    for (const auto& body : m_bodies) {
+        if (body != nullptr && body->m_type == BodyType::Dynamic &&
+            !body->m_bodyID.IsInvalid() && bodyInterface.IsAdded(body->m_bodyID)) {
+            bodyInterface.ActivateBody(body->m_bodyID);
+        }
+    }
+#endif
 }
 
 void PhysicsSystem::syncAnimationDrivenNodes() {
@@ -449,10 +529,33 @@ std::vector<PhysicsDebugLine> PhysicsSystem::getDebugLines() const {
             body->appendDebugLines(lines);
 #if defined(_CPPUNWIND)
         } catch (const std::exception& error) {
-            std::cerr << "[Physics] Collision debug skipped body after exception: "
-                      << error.what() << '\n';
+            if (!body->m_debugExceptionLogged) {
+                std::cerr << "[Physics] Collision debug exception for node '"
+                          << (body->m_node != nullptr ? body->m_node->getName() : "<null>")
+                          << "': " << error.what() << '\n';
+                body->m_debugExceptionLogged = true;
+            }
+        } catch (const std::string& error) {
+            if (!body->m_debugExceptionLogged) {
+                std::cerr << "[Physics] Collision debug string exception for node '"
+                          << (body->m_node != nullptr ? body->m_node->getName() : "<null>")
+                          << "': " << error << '\n';
+                body->m_debugExceptionLogged = true;
+            }
+        } catch (const char* error) {
+            if (!body->m_debugExceptionLogged) {
+                std::cerr << "[Physics] Collision debug C-string exception for node '"
+                          << (body->m_node != nullptr ? body->m_node->getName() : "<null>")
+                          << "': " << (error != nullptr ? error : "<null>") << '\n';
+                body->m_debugExceptionLogged = true;
+            }
         } catch (...) {
-            std::cerr << "[Physics] Collision debug skipped body after unknown exception\n";
+            if (!body->m_debugExceptionLogged) {
+                std::cerr << "[Physics] Collision debug unknown exception for node '"
+                          << (body->m_node != nullptr ? body->m_node->getName() : "<null>")
+                          << "'\n";
+                body->m_debugExceptionLogged = true;
+            }
         }
 #endif
     }

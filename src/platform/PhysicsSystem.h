@@ -41,6 +41,7 @@ private:
     JPH::BodyID m_bodyID;
     JPH::ShapeRefC m_shape;
     mutable bool m_debugWarningLogged = false;
+    mutable bool m_debugExceptionLogged = false;
 #endif
 };
 
@@ -60,6 +61,7 @@ public:
     bool isDebugDrawEnabled() const { return m_debugDrawEnabled; }
     void beginEditorManipulation(Node* node);
     void endEditorManipulation(Node* node);
+    void wakeDynamicBodies();
     std::vector<PhysicsDebugLine> getDebugLines() const;
 
 private:
