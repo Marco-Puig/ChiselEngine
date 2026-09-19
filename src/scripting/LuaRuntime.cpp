@@ -39,11 +39,11 @@ Node* loadMesh(Scene* scene, const std::string& path,
                const std::string& name) {
     if (scene == nullptr)
         return nullptr;
-    MeshNode* mesh = GLBLoader::loadGLB(path);
-    if (mesh == nullptr)
+    Node* root = GLBLoader::loadGLB(path);
+    if (root == nullptr)
         return nullptr;
-    mesh->setName(name);
-    return scene->adopt(std::unique_ptr<MeshNode>(mesh));
+    root->setName(name);
+    return scene->adopt(std::unique_ptr<Node>(root));
 }
 
 DirectionalLight* createDirectionalLight(Scene* scene,

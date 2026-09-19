@@ -200,7 +200,7 @@ int findPrimarySceneMesh(const tinygltf::Model& model) {
 }
 }
 
-MeshNode* GLBLoader::loadGLB(const std::string& path) {
+Node* GLBLoader::loadGLB(const std::string& path) {
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
     std::string err;
@@ -210,11 +210,10 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
     if (!file)
         throw std::runtime_error("Failed to open GLB file: " + path);
     const std::vector<unsigned char> input((std::istreambuf_iterator<char>(file)),
-                                           std::istreambuf_iterator<char>());
+                                            std::istreambuf_iterator<char>());
     if (input.size() < 20)
         throw std::runtime_error("GLB file is truncated: " + path);
 
-    // Accept older exporters that omitted the required JSON chunk padding.
     std::vector<unsigned char> normalized = input;
     const uint32_t jsonLength = input[12] | (input[13] << 8) | (input[14] << 16) | (input[15] << 24);
     const uint32_t padding = (4 - (jsonLength % 4)) % 4;
@@ -236,6 +235,7 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
 
     if (model.meshes.empty())
         throw std::runtime_error("GLB contains no renderable mesh: " + path);
+
     std::vector<SceneMeshInstance> sceneInstances;
     collectDefaultSceneMeshInstances(model, sceneInstances);
     if (sceneInstances.empty()) {
@@ -243,212 +243,192 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
             sceneInstances.push_back({static_cast<int>(i), glm::mat4(1.0f)});
         std::cerr << "GLB has no mesh nodes in its default scene; checking all meshes\n";
     }
-    const int meshIndex = findPrimarySceneMesh(model);
-    if (meshIndex < 0 || model.meshes[meshIndex].primitives.empty())
-        throw std::runtime_error("GLB scene contains no valid renderable mesh: " + path);
-    const tinygltf::Mesh& sourceMesh = model.meshes[meshIndex];
-    glm::mat4 sourceTransform(1.0f);
-    for (const SceneMeshInstance& instance : sceneInstances) {
-        if (instance.mesh == meshIndex) {
-            sourceTransform = instance.transform;
-            break;
-        }
-    }
 
-    std::vector<float> vertices;
-    std::vector<glm::vec3> positions;
-    std::vector<glm::vec3> sourceNormals;
-    std::vector<glm::vec2> texcoords;
-    int firstMaterialIndex = -1;
-    std::vector<unsigned int> indices;
-    glm::vec3 boundsMin(std::numeric_limits<float>::max());
-    glm::vec3 boundsMax(std::numeric_limits<float>::lowest());
-    for (const auto& primitive : sourceMesh.primitives) {
-        if (firstMaterialIndex < 0)
-            firstMaterialIndex = primitive.material;
-        const auto positionIt = primitive.attributes.find("POSITION");
-        if (positionIt == primitive.attributes.end())
-            continue;
-        if (positionIt->second < 0 ||
-            positionIt->second >= static_cast<int>(model.accessors.size())) {
-            std::cerr << "GLB mesh " << meshIndex << " has invalid POSITION accessor\n";
-            continue;
-        }
-        const tinygltf::Accessor& position = model.accessors[positionIt->second];
-        if (position.bufferView < 0 ||
-            position.bufferView >= static_cast<int>(model.bufferViews.size())) {
-            std::cerr << "GLB mesh " << meshIndex << " has invalid POSITION buffer view\n";
-            continue;
-        }
-        const tinygltf::BufferView& positionView = model.bufferViews[position.bufferView];
-        if (positionView.buffer < 0 ||
-            positionView.buffer >= static_cast<int>(model.buffers.size())) {
-            std::cerr << "GLB mesh " << meshIndex << " has invalid POSITION buffer\n";
-            continue;
-        }
-        const tinygltf::Buffer& positionBuffer = model.buffers[positionView.buffer];
-        const size_t stride = position.ByteStride(positionView) != 0
-            ? position.ByteStride(positionView)
-            : sizeof(float) * 3;
-        const size_t positionStart = positionView.byteOffset + position.byteOffset;
-        const size_t positionStride = stride;
-        if (positionStart > positionBuffer.data.size() ||
-            position.count > (positionBuffer.data.size() - positionStart) / positionStride)
-            throw std::runtime_error("GLB POSITION accessor exceeds its buffer: " + path);
-        const unsigned char* data = positionBuffer.data.data() + positionStart;
-        for (size_t i = 0; i < position.count; ++i) {
-            const float* value = reinterpret_cast<const float*>(data + i * stride);
-            const glm::vec3 transformed =
-                glm::vec3(sourceTransform * glm::vec4(value[0], value[1], value[2], 1.0f));
-            positions.push_back(transformed);
-            boundsMin = glm::min(boundsMin, transformed);
-            boundsMax = glm::max(boundsMax, transformed);
-        }
+    auto* root = new Node("GLB_Root:" + path);
 
-        const auto normalIt = primitive.attributes.find("NORMAL");
-        if (normalIt != primitive.attributes.end()) {
-            const tinygltf::Accessor& normal = model.accessors.at(normalIt->second);
-            const tinygltf::BufferView& view = model.bufferViews.at(normal.bufferView);
-            const tinygltf::Buffer& buffer = model.buffers.at(view.buffer);
-            const size_t normalStride = normal.ByteStride(view) != 0 ? normal.ByteStride(view) : sizeof(float) * 3;
-            const unsigned char* normalData = buffer.data.data() + view.byteOffset + normal.byteOffset;
-            const glm::mat3 normalTransform =
-                glm::transpose(glm::inverse(glm::mat3(sourceTransform)));
-            for (size_t i = 0; i < normal.count; ++i) {
-                const float* value = reinterpret_cast<const float*>(normalData + i * normalStride);
-                sourceNormals.push_back(glm::normalize(
-                    normalTransform * glm::vec3(value[0], value[1], value[2])));
+    for (const auto& instance : sceneInstances) {
+        const int meshIndex = instance.mesh;
+        if (meshIndex < 0 || meshIndex >= static_cast<int>(model.meshes.size())) {
+            std::cerr << "GLB scene references invalid mesh index " << meshIndex << '\n';
+            continue;
+        }
+        const tinygltf::Mesh& sourceMesh = model.meshes[meshIndex];
+        if (sourceMesh.primitives.empty())
+            continue;
+
+        glm::mat4 worldTransform = instance.transform;
+        glm::vec3 pos = glm::vec3(worldTransform[3]);
+        glm::quat rot = glm::quat_cast(worldTransform);
+        glm::vec3 scale = glm::vec3(glm::length(worldTransform[0]), glm::length(worldTransform[1]), glm::length(worldTransform[2]));
+
+        std::vector<float> vertices;
+        std::vector<glm::vec3> positions;
+        std::vector<glm::vec3> sourceNormals;
+        std::vector<glm::vec2> texcoords;
+        int firstMaterialIndex = -1;
+        std::vector<unsigned int> indices;
+        glm::vec3 boundsMin(std::numeric_limits<float>::max());
+        glm::vec3 boundsMax(std::numeric_limits<float>::lowest());
+
+        for (const auto& primitive : sourceMesh.primitives) {
+            if (firstMaterialIndex < 0)
+                firstMaterialIndex = primitive.material;
+            const auto positionIt = primitive.attributes.find("POSITION");
+            if (positionIt == primitive.attributes.end())
+                continue;
+            if (positionIt->second < 0 || positionIt->second >= static_cast<int>(model.accessors.size()))
+                continue;
+            const tinygltf::Accessor& position = model.accessors[positionIt->second];
+            if (position.bufferView < 0 || position.bufferView >= static_cast<int>(model.bufferViews.size()))
+                continue;
+            const tinygltf::BufferView& positionView = model.bufferViews[position.bufferView];
+            if (positionView.buffer < 0 || positionView.buffer >= static_cast<int>(model.buffers.size()))
+                continue;
+            const tinygltf::Buffer& positionBuffer = model.buffers[positionView.buffer];
+            const size_t stride = position.ByteStride(positionView) != 0 ? position.ByteStride(positionView) : sizeof(float) * 3;
+            const size_t positionStart = positionView.byteOffset + position.byteOffset;
+            const unsigned char* data = positionBuffer.data.data() + positionStart;
+            for (size_t i = 0; i < position.count; ++i) {
+                const float* value = reinterpret_cast<const float*>(data + i * stride);
+                const glm::vec3 localPos = glm::vec3(value[0], value[1], value[2]);
+                positions.push_back(localPos);
+                boundsMin = glm::min(boundsMin, localPos);
+                boundsMax = glm::max(boundsMax, localPos);
             }
-        } else {
-            sourceNormals.resize(positions.size(), glm::vec3(0.0f));
-        }
-        const auto uvIt = primitive.attributes.find("TEXCOORD_0");
-        if (uvIt != primitive.attributes.end()) {
-            const tinygltf::Accessor& uv = model.accessors.at(uvIt->second);
-            const tinygltf::BufferView& view = model.bufferViews.at(uv.bufferView);
-            const tinygltf::Buffer& buffer = model.buffers.at(view.buffer);
-            const size_t uvStride = uv.ByteStride(view) != 0 ? uv.ByteStride(view) : sizeof(float) * 2;
-            const unsigned char* uvData = buffer.data.data() + view.byteOffset + uv.byteOffset;
-            for (size_t i = 0; i < uv.count; ++i) {
-                const float* value = reinterpret_cast<const float*>(uvData + i * uvStride);
-                texcoords.emplace_back(value[0], value[1]);
-            }
-        } else {
-            texcoords.resize(positions.size(), glm::vec2(0.0f));
-        }
 
-        if (primitive.indices < 0)
-            throw std::runtime_error("GLB primitive has no index buffer: " + path);
-        const tinygltf::Accessor& index = model.accessors.at(primitive.indices);
-        const tinygltf::BufferView& indexView = model.bufferViews.at(index.bufferView);
-        const tinygltf::Buffer& indexBuffer = model.buffers.at(indexView.buffer);
-        const size_t indexElementSize =
-            index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE ? sizeof(unsigned char) :
-            index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT ? sizeof(unsigned short) :
-            index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT ? sizeof(unsigned int) : 0;
-        if (indexElementSize == 0)
-            throw std::runtime_error("Unsupported GLB index format: " + path);
-        const size_t indexStart = indexView.byteOffset + index.byteOffset;
-        if (indexStart > indexBuffer.data.size() ||
-            index.count > (indexBuffer.data.size() - indexStart) / indexElementSize)
-            throw std::runtime_error("GLB index accessor exceeds its buffer: " + path);
-        const unsigned char* indexData = indexBuffer.data.data() + indexStart;
-        const unsigned int vertexOffset = static_cast<unsigned int>(positions.size() - position.count);
-        for (size_t i = 0; i < index.count; ++i) {
-            unsigned int value = 0;
-            if (index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE)
-                value = indexData[i];
-            else if (index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
-                value = reinterpret_cast<const unsigned short*>(indexData)[i];
-            else if (index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT)
-                value = reinterpret_cast<const unsigned int*>(indexData)[i];
-            else
+            const auto normalIt = primitive.attributes.find("NORMAL");
+            if (normalIt != primitive.attributes.end()) {
+                const tinygltf::Accessor& normal = model.accessors.at(normalIt->second);
+                const tinygltf::BufferView& view = model.bufferViews.at(normal.bufferView);
+                const tinygltf::Buffer& buffer = model.buffers.at(view.buffer);
+                const size_t normalStride = normal.ByteStride(view) != 0 ? normal.ByteStride(view) : sizeof(float) * 3;
+                const unsigned char* normalData = buffer.data.data() + view.byteOffset + normal.byteOffset;
+                for (size_t i = 0; i < normal.count; ++i) {
+                    const float* value = reinterpret_cast<const float*>(normalData + i * normalStride);
+                    sourceNormals.push_back(glm::vec3(value[0], value[1], value[2]));
+                }
+            } else {
+                sourceNormals.resize(positions.size(), glm::vec3(0.0f));
+            }
+            const auto uvIt = primitive.attributes.find("TEXCOORD_0");
+            if (uvIt != primitive.attributes.end()) {
+                const tinygltf::Accessor& uv = model.accessors.at(uvIt->second);
+                const tinygltf::BufferView& view = model.bufferViews.at(uv.bufferView);
+                const tinygltf::Buffer& buffer = model.buffers.at(view.buffer);
+                const size_t uvStride = uv.ByteStride(view) != 0 ? uv.ByteStride(view) : sizeof(float) * 2;
+                const unsigned char* uvData = buffer.data.data() + view.byteOffset + uv.byteOffset;
+                for (size_t i = 0; i < uv.count; ++i) {
+                    const float* value = reinterpret_cast<const float*>(uvData + i * uvStride);
+                    texcoords.emplace_back(value[0], value[1]);
+                }
+            } else {
+                texcoords.resize(positions.size(), glm::vec2(0.0f));
+            }
+
+            if (primitive.indices < 0)
+                throw std::runtime_error("GLB primitive has no index buffer: " + path);
+            const tinygltf::Accessor& index = model.accessors.at(primitive.indices);
+            const tinygltf::BufferView& indexView = model.bufferViews.at(index.bufferView);
+            const tinygltf::Buffer& indexBuffer = model.buffers.at(indexView.buffer);
+            const size_t indexElementSize =
+                index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE ? sizeof(unsigned char) :
+                index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT ? sizeof(unsigned short) :
+                index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT ? sizeof(unsigned int) : 0;
+            if (indexElementSize == 0)
                 throw std::runtime_error("Unsupported GLB index format: " + path);
-            if (value >= position.count)
-                throw std::runtime_error("GLB index references a vertex outside its primitive: " + path);
-            indices.push_back(value + vertexOffset);
+            const size_t indexStart = indexView.byteOffset + index.byteOffset;
+            const unsigned char* indexData = indexBuffer.data.data() + indexStart;
+            const unsigned int vertexOffset = static_cast<unsigned int>(positions.size() - position.count);
+            for (size_t i = 0; i < index.count; ++i) {
+                unsigned int value = 0;
+                if (index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE)
+                    value = indexData[i];
+                else if (index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
+                    value = reinterpret_cast<const unsigned short*>(indexData)[i];
+                else if (index.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT)
+                    value = reinterpret_cast<const unsigned int*>(indexData)[i];
+                else
+                    throw std::runtime_error("Unsupported GLB index format: " + path);
+                if (value >= position.count)
+                    throw std::runtime_error("GLB index references a vertex outside its primitive: " + path);
+                indices.push_back(value + vertexOffset);
+            }
         }
-    }
-    if (positions.empty() || indices.empty())
-        throw std::runtime_error("GLB mesh has no POSITION/index data: " + path);
+        if (positions.empty() || indices.empty())
+            continue;
 
-    std::vector<glm::vec3> normals(positions.size(), glm::vec3(0.0f));
-    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
-        if (indices[i] >= positions.size() ||
-            indices[i + 1] >= positions.size() ||
-            indices[i + 2] >= positions.size())
-            throw std::runtime_error("GLB index references a vertex outside the mesh: " + path);
-        const glm::vec3 edgeA = positions[indices[i + 1]] - positions[indices[i]];
-        const glm::vec3 edgeB = positions[indices[i + 2]] - positions[indices[i]];
-        const glm::vec3 normal = glm::cross(edgeA, edgeB);
-        normals[indices[i]] += normal;
-        normals[indices[i + 1]] += normal;
-        normals[indices[i + 2]] += normal;
-    }
-    for (size_t i = 0; i < positions.size(); ++i) {
-        const glm::vec3 normal = glm::length(normals[i]) > 0.0f
-            ? glm::normalize(normals[i]) : glm::vec3(0.0f, 1.0f, 0.0f);
-        const glm::vec3 sourceNormal = i < sourceNormals.size() ? sourceNormals[i] : normal;
-        const glm::vec3 finalNormal = glm::length(sourceNormal) > 0.0f
-            ? glm::normalize(sourceNormal) : normal;
-        const glm::vec2 uv = i < texcoords.size() ? texcoords[i] : glm::vec2(0.0f);
-        vertices.insert(vertices.end(), {positions[i].x, positions[i].y, positions[i].z,
-                                         finalNormal.x, finalNormal.y, finalNormal.z,
-                                         uv.x, uv.y});
-    }
-
-    GLuint vao = 0, vbo = 0, ebo = 0;
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
-    glGenBuffers(1, &ebo);
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), nullptr);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
-                          reinterpret_cast<void*>(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
-                          reinterpret_cast<void*>(6 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    glBindVertexArray(0);
-
-    auto* mesh = new MeshNode("GLB:" + path);
-    mesh->setMesh(vao, vbo, ebo, static_cast<int>(indices.size()), true);
-    mesh->setBounds(boundsMin, boundsMax);
-    std::vector<glm::vec3> collisionVertices;
-    for (const SceneMeshInstance& instance : sceneInstances) {
-        const std::vector<glm::vec3> sourcePositions =
-            readMeshPositions(model, instance.mesh, path);
-        for (const glm::vec3& point : sourcePositions) {
-            const glm::vec3 transformed =
-                glm::vec3(instance.transform * glm::vec4(point, 1.0f));
-            collisionVertices.push_back(transformed);
+        std::vector<glm::vec3> normals(positions.size(), glm::vec3(0.0f));
+        for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+            if (indices[i] >= positions.size() || indices[i + 1] >= positions.size() || indices[i + 2] >= positions.size())
+                throw std::runtime_error("GLB index references a vertex outside the mesh: " + path);
+            const glm::vec3 edgeA = positions[indices[i + 1]] - positions[indices[i]];
+            const glm::vec3 edgeB = positions[indices[i + 2]] - positions[indices[i]];
+            const glm::vec3 normal = glm::cross(edgeA, edgeB);
+            normals[indices[i]] += normal;
+            normals[indices[i + 1]] += normal;
+            normals[indices[i + 2]] += normal;
         }
+        for (size_t i = 0; i < positions.size(); ++i) {
+            const glm::vec3 normal = glm::length(normals[i]) > 0.0f ? glm::normalize(normals[i]) : glm::vec3(0.0f, 1.0f, 0.0f);
+            const glm::vec3 sourceNormal = i < sourceNormals.size() ? sourceNormals[i] : normal;
+            const glm::vec3 finalNormal = glm::length(sourceNormal) > 0.0f ? glm::normalize(sourceNormal) : normal;
+            const glm::vec2 uv = i < texcoords.size() ? texcoords[i] : glm::vec2(0.0f);
+            vertices.insert(vertices.end(), {positions[i].x, positions[i].y, positions[i].z,
+                                            finalNormal.x, finalNormal.y, finalNormal.z,
+                                            uv.x, uv.y});
+        }
+
+        GLuint vao = 0, vbo = 0, ebo = 0;
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+        glGenBuffers(1, &ebo);
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), nullptr);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), reinterpret_cast<void*>(6 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+        glBindVertexArray(0);
+
+        auto* meshNode = new MeshNode("GLB_Mesh:" + path);
+        meshNode->setMesh(vao, vbo, ebo, static_cast<int>(indices.size()), true);
+        meshNode->setBounds(boundsMin, boundsMax);
+        meshNode->setPosition(pos);
+        meshNode->setRotation(rot);
+        meshNode->setScale(scale);
+
+        std::vector<glm::vec3> subCollisionVertices;
+        const std::vector<glm::vec3> readPositions = readMeshPositions(model, meshIndex, path);
+        for (const glm::vec3& point : readPositions) {
+            const glm::vec3 transformed = glm::vec3(worldTransform * glm::vec4(point, 1.0f));
+            subCollisionVertices.push_back(transformed);
+        }
+        meshNode->setCollisionVertices(std::move(subCollisionVertices));
+
+        if (firstMaterialIndex >= 0 && firstMaterialIndex < static_cast<int>(model.materials.size())) {
+            const tinygltf::Material& source = model.materials[firstMaterialIndex];
+            Material material;
+            const auto& pbr = source.pbrMetallicRoughness;
+            material.baseColorFactor = glm::vec4(
+                static_cast<float>(pbr.baseColorFactor[0]),
+                static_cast<float>(pbr.baseColorFactor[1]),
+                static_cast<float>(pbr.baseColorFactor[2]),
+                static_cast<float>(pbr.baseColorFactor[3]));
+            material.metallicFactor = static_cast<float>(pbr.metallicFactor);
+            material.roughnessFactor = static_cast<float>(pbr.roughnessFactor);
+            material.baseColorTexture = materialTexture(model, pbr.baseColorTexture.index, true);
+            material.metallicRoughnessTexture = materialTexture(model, pbr.metallicRoughnessTexture.index, false);
+            material.normalTexture = materialTexture(model, source.normalTexture.index, false);
+            material.emissiveTexture = materialTexture(model, source.emissiveTexture.index, true);
+            meshNode->setMaterial(material);
+        }
+        root->addChild(std::unique_ptr<MeshNode>(meshNode));
     }
-    if (collisionVertices.empty())
-        collisionVertices = positions;
-    mesh->setCollisionVertices(std::move(collisionVertices));
-    if (firstMaterialIndex >= 0 &&
-        firstMaterialIndex < static_cast<int>(model.materials.size())) {
-        const tinygltf::Material& source = model.materials[firstMaterialIndex];
-        Material material;
-        const auto& pbr = source.pbrMetallicRoughness;
-        material.baseColorFactor = glm::vec4(
-            static_cast<float>(pbr.baseColorFactor[0]),
-            static_cast<float>(pbr.baseColorFactor[1]),
-            static_cast<float>(pbr.baseColorFactor[2]),
-            static_cast<float>(pbr.baseColorFactor[3]));
-        material.metallicFactor = static_cast<float>(pbr.metallicFactor);
-        material.roughnessFactor = static_cast<float>(pbr.roughnessFactor);
-        material.baseColorTexture = materialTexture(model, pbr.baseColorTexture.index, true);
-        material.metallicRoughnessTexture = materialTexture(model, pbr.metallicRoughnessTexture.index, false);
-        material.normalTexture = materialTexture(model, source.normalTexture.index, false);
-        material.emissiveTexture = materialTexture(model, source.emissiveTexture.index, true);
-        mesh->setMaterial(material);
-    }
-    return mesh;
+
+    return root;
 }
