@@ -33,6 +33,7 @@ void Engine::run(IGame* game) {
 
         m_window->pollEvents();
         DevUI::getInstance().beginFrame();
+        DevUI::getInstance().updateGizmo(game->getSceneRoot(), game->getCamera());
         game->update(dt);
         PhysicsSystem::getInstance().update(dt);
         xr.syncActions();

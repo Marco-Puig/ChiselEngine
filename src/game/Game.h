@@ -1,6 +1,6 @@
 #pragma once
 #include "core/IGame.h"
-#include "scene/Node.h"
+#include "scene/Scene.h"
 #include "scene/Animator.h"
 #include "scene/ArcRotateCamera.h"
 #include <memory>
@@ -10,13 +10,13 @@ public:
     Game();
     void start() override;
     void update(float deltaTime) override;
-    Node* getSceneRoot() const { return sceneRoot.get(); }
+    Node* getSceneRoot() const { return scene->getRoot(); }
     ArcRotateCamera* getCamera() const override { return camera.get(); }
 
 private:
-    std::unique_ptr<Node> sceneRoot;
+    std::unique_ptr<Scene> scene;
     std::unique_ptr<Animator> animator;
-    Node* cube = nullptr;
+    Node* frog = nullptr;
     Node* plane = nullptr;
     std::unique_ptr<ArcRotateCamera> camera;
 };

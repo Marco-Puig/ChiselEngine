@@ -5,6 +5,8 @@
 #include "PhysicsSystem.h"
 #include "scene/Node.h"
 #include "scene/ArcRotateCamera.h"
+#include "rendering/RenderSystem.h"
+#include "rendering/Light.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -15,7 +17,10 @@
 #include <chrono>
 #include <sstream>
 #include <cstring>
+#include <cfloat>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <functional>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -29,6 +34,11 @@ DevUI& DevUI::getInstance() {
 
 DevUI::~DevUI() {
     shutdown();
+}
+
+bool DevUI::isGizmoCapturingMouse() {
+    const ImGuiIO& io = ImGui::GetIO();
+    return io.WantCaptureMouse || ImGuizmo::IsUsing() || ImGuizmo::IsOver();
 }
 
 void DevUI::init(Window& window) {
@@ -64,6 +74,99 @@ void DevUI::beginFrame() {
     ImGuizmo::BeginFrame();
 }
 
+void DevUI::updateGizmo(Node* sceneRoot, ArcRotateCamera* camera) {
+    m_gizmoCapturingMouse = false;
+    selectLightAtCursor(sceneRoot, camera);
+    Node* previousNode = m_manipulatedNode;
+    if (m_manipulatedNode != nullptr && m_manipulatedNode != m_selectedNode) {
+        PhysicsSystem::getInstance().endEditorManipulation(m_manipulatedNode);
+        m_manipulatedNode->setEditorManipulated(false);
+    }
+    if (!m_visible || m_selectedNode == nullptr || camera == nullptr) {
+        if (m_manipulatedNode != nullptr) {
+            PhysicsSystem::getInstance().endEditorManipulation(m_manipulatedNode);
+            m_manipulatedNode->setEditorManipulated(false);
+        }
+        m_manipulatedNode = nullptr;
+        return;
+    }
+    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
+    const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+    ImGuizmo::SetRect(0.0f, 0.0f, displaySize.x, displaySize.y);
+    glm::mat4 transform = m_selectedNode->getWorldTransform();
+    float matrix[16];
+    std::memcpy(matrix, glm::value_ptr(transform), sizeof(matrix));
+    const glm::mat4 view = camera->getViewMatrix();
+    const glm::mat4 projection = camera->getProjectionMatrix();
+    ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection),
+                         m_gizmoOperation == 0 ? ImGuizmo::TRANSLATE : ImGuizmo::ROTATE,
+                         ImGuizmo::WORLD, matrix);
+    const bool usingGizmo = ImGuizmo::IsUsing();
+    if (!usingGizmo && previousNode != nullptr)
+        PhysicsSystem::getInstance().endEditorManipulation(previousNode);
+    if (usingGizmo && previousNode != m_selectedNode)
+        PhysicsSystem::getInstance().beginEditorManipulation(m_selectedNode);
+    m_selectedNode->setEditorManipulated(usingGizmo);
+    m_manipulatedNode = usingGizmo ? m_selectedNode : nullptr;
+    if (usingGizmo) {
+        glm::mat4 edited;
+        std::memcpy(glm::value_ptr(edited), matrix, sizeof(matrix));
+        if (m_selectedNode->getParent() != nullptr)
+            edited = glm::inverse(m_selectedNode->getParent()->getWorldTransform()) * edited;
+        glm::vec3 translation;
+        glm::vec3 rotation;
+        glm::vec3 scale;
+        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(edited), &translation.x,
+                                               &rotation.x, &scale.x);
+        m_selectedNode->setPosition(translation);
+        m_selectedNode->setRotation(glm::quat(glm::radians(rotation)));
+    }
+    m_gizmoCapturingMouse = usingGizmo || ImGuizmo::IsOver();
+}
+
+void DevUI::selectLightAtCursor(Node* sceneRoot, ArcRotateCamera* camera) {
+    if (!m_visible || sceneRoot == nullptr || camera == nullptr)
+        return;
+    const ImGuiIO& io = ImGui::GetIO();
+    const glm::mat4 view = camera->getViewMatrix();
+    const glm::mat4 projection = camera->getProjectionMatrix();
+    Node* hit = nullptr;
+    float bestDistance = 12.0f;
+    std::function<void(Node*)> visit = [&](Node* node) {
+        if (auto* light = dynamic_cast<Light*>(node)) {
+            const glm::vec4 clip = projection * view *
+                                   glm::vec4(glm::vec3(node->getWorldTransform()[3]), 1.0f);
+            if (clip.w > 0.0f) {
+                const glm::vec2 screen(
+                    (clip.x / clip.w * 0.5f + 0.5f) * io.DisplaySize.x,
+                    (1.0f - (clip.y / clip.w * 0.5f + 0.5f)) * io.DisplaySize.y);
+                const float distance = glm::length(screen - glm::vec2(io.MousePos.x, io.MousePos.y));
+                ImDrawList* drawList = ImGui::GetForegroundDrawList();
+                const ImVec2 icon(screen.x, screen.y);
+                drawList->AddCircleFilled(icon, 7.0f,
+                    node == m_selectedNode ? IM_COL32(255, 220, 80, 255)
+                                           : IM_COL32(255, 180, 40, 220));
+                drawList->AddLine(ImVec2(screen.x - 11.0f, screen.y),
+                                  ImVec2(screen.x + 11.0f, screen.y),
+                                  IM_COL32(255, 230, 120, 220), 1.5f);
+                drawList->AddLine(ImVec2(screen.x, screen.y - 11.0f),
+                                  ImVec2(screen.x, screen.y + 11.0f),
+                                  IM_COL32(255, 230, 120, 220), 1.5f);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    hit = light;
+                }
+            }
+        }
+        for (const auto& child : node->getChildren())
+            visit(child.get());
+    };
+    visit(sceneRoot);
+    if (hit != nullptr && io.MouseClicked[0] && !io.WantCaptureMouse)
+        m_selectedNode = hit;
+}
+
 namespace {
 void drawNodeList(Node* node, Node*& selected) {
     if (node == nullptr)
@@ -78,6 +181,7 @@ void drawNodeList(Node* node, Node*& selected) {
 
 void DevUI::render(Window& window, XRManager& xr, Node* sceneRoot,
                    ArcRotateCamera* camera, float deltaTime) {
+    (void)camera;
     if (!m_initialized)
         return;
 
@@ -107,68 +211,54 @@ void DevUI::render(Window& window, XRManager& xr, Node* sceneRoot,
 
     if (m_visible) {
         ImGui::SetNextWindowSize(ImVec2(390.0f, 280.0f), ImGuiCond_FirstUseEver);
-        ImGui::Begin("ChiselEngine DevUI", &m_visible);
-        ImGui::Text("Engine version: %s", ChiselEngine::Version);
-        ImGui::Separator();
-        ImGui::Text("FPS: %.1f", m_fps);
-        ImGui::Text("Frame time: %.3f ms", m_frameTimeMs);
-        ImGui::Separator();
-        ImGui::Text("GPU: %s", m_gpuName.c_str());
-        ImGui::Text("CPU: %s", m_cpuName.c_str());
-        ImGui::Text("OS: %s", m_osName.c_str());
-        ImGui::Separator();
+        ImGui::SetNextWindowSizeConstraints(ImVec2(300.0f, 220.0f),
+                                             ImVec2(FLT_MAX, FLT_MAX));
+        const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse;
+        if (ImGui::Begin("ChiselEngine", &m_visible, windowFlags)) {
+            ImGui::Text("Engine version: %s", ChiselEngine::Version);
+            ImGui::Separator();
+            ImGui::Text("FPS: %.1f", m_fps);
+            ImGui::Text("Frame time: %.3f ms", m_frameTimeMs);
+            ImGui::Separator();
+            ImGui::Text("GPU: %s", m_gpuName.c_str());
+            ImGui::Text("CPU: %s", m_cpuName.c_str());
+            ImGui::Text("OS: %s", m_osName.c_str());
+            ImGui::Separator();
 
-        if (ImGui::Checkbox("Simulated VR", &m_simulatedVR))
-            xr.setSimulationMode(m_simulatedVR, window);
-        ImGui::SameLine();
-        if (m_simulatedVR)
-            ImGui::TextUnformatted("Desktop stereo simulation");
-        else if (xr.isRunning())
-            ImGui::TextUnformatted("OpenXR runtime");
-        else
-            ImGui::TextUnformatted("OpenXR unavailable; desktop fallback");
-        if (ImGui::Checkbox("Show Collision Debug", &m_showCollisionDebug))
-            PhysicsSystem::getInstance().setDebugDrawEnabled(m_showCollisionDebug);
-        ImGui::Separator();
-        ImGui::TextUnformatted("Scene nodes");
-        ImGui::BeginChild("NodeList", ImVec2(0.0f, 90.0f), true);
-        drawNodeList(sceneRoot, m_selectedNode);
-        ImGui::EndChild();
-        if (ImGui::RadioButton("Move", m_gizmoOperation == 0))
-            m_gizmoOperation = 0;
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Rotate", m_gizmoOperation == 1))
-            m_gizmoOperation = 1;
-        ImGui::Text("Press F1 to toggle this window");
+            if (ImGui::Checkbox("Simulated VR", &m_simulatedVR))
+                xr.setSimulationMode(m_simulatedVR, window);
+            ImGui::SameLine();
+            if (m_simulatedVR)
+                ImGui::TextUnformatted("Desktop stereo simulation");
+            else if (xr.isRunning())
+                ImGui::TextUnformatted("OpenXR runtime");
+            else
+                ImGui::TextUnformatted("OpenXR unavailable; desktop fallback");
+            if (ImGui::Checkbox("Show Collision Debug", &m_showCollisionDebug))
+                PhysicsSystem::getInstance().setDebugDrawEnabled(m_showCollisionDebug);
+            if (DirectionalLight* light = RenderSystem::getInstance().getDirectionalLight()) {
+                float intensity = light->getIntensity();
+                float exposure = light->getExposure();
+                if (ImGui::SliderFloat("Directional intensity", &intensity, 0.0f, 8.0f, "%.2f"))
+                    light->setIntensity(intensity);
+                if (ImGui::SliderFloat("Directional exposure", &exposure, -4.0f, 4.0f, "%.2f EV"))
+                    light->setExposure(exposure);
+            }
+            ImGui::Separator();
+            ImGui::TextUnformatted("Scene nodes");
+            ImGui::BeginChild("DevUI.NodeList", ImVec2(0.0f, 90.0f), true);
+            drawNodeList(sceneRoot, m_selectedNode);
+            ImGui::EndChild();
+            if (ImGui::RadioButton("Move", m_gizmoOperation == 0))
+                m_gizmoOperation = 0;
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Rotate", m_gizmoOperation == 1))
+                m_gizmoOperation = 1;
+            ImGui::Text("Press F1 to toggle this window");
+        }
         ImGui::End();
     }
 
-    if (m_visible && m_selectedNode != nullptr && camera != nullptr) {
-        ImGuizmo::SetOrthographic(false);
-        ImGuizmo::SetDrawlist();
-        const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
-        ImGuizmo::SetRect(0.0f, 0.0f, displaySize.x, displaySize.y);
-        glm::mat4 transform = m_selectedNode->getWorldTransform();
-        float matrix[16];
-        std::memcpy(matrix, glm::value_ptr(transform), sizeof(matrix));
-        const glm::mat4 view = camera->getViewMatrix();
-        const glm::mat4 projection = camera->getProjectionMatrix();
-        ImGuizmo::Manipulate(glm::value_ptr(view),
-                             glm::value_ptr(projection),
-                             m_gizmoOperation == 0 ? ImGuizmo::TRANSLATE : ImGuizmo::ROTATE,
-                             ImGuizmo::WORLD, matrix);
-        if (ImGuizmo::IsUsing()) {
-            glm::mat4 edited;
-            std::memcpy(glm::value_ptr(edited), matrix, sizeof(matrix));
-            glm::vec3 translation;
-            glm::vec3 rotation;
-            glm::vec3 scale;
-            ImGuizmo::DecomposeMatrixToComponents(matrix, &translation.x,
-                                                   &rotation.x, &scale.x);
-            m_selectedNode->setPosition(translation);
-            m_selectedNode->setRotation(glm::quat(glm::radians(rotation)));
-        }
-    }
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }

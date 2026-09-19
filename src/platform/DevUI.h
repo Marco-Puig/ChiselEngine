@@ -13,9 +13,11 @@ public:
     void init(Window& window);
     void shutdown();
     void beginFrame();
+    void updateGizmo(Node* sceneRoot, ArcRotateCamera* camera);
     void render(Window& window, XRManager& xr, Node* sceneRoot,
                 ArcRotateCamera* camera, float deltaTime);
     bool isVisible() const { return m_visible; }
+    static bool isGizmoCapturingMouse();
 
 private:
     DevUI() = default;
@@ -24,6 +26,7 @@ private:
     DevUI& operator=(const DevUI&) = delete;
 
     void querySystemInfo();
+    void selectLightAtCursor(Node* sceneRoot, ArcRotateCamera* camera);
 
     bool m_initialized = false;
     bool m_modeInitialized = false;
@@ -39,7 +42,9 @@ private:
     uint32_t m_intervalFrames = 0;
     bool m_showCollisionDebug = false;
     Node* m_selectedNode = nullptr;
+    Node* m_manipulatedNode = nullptr;
     int m_gizmoOperation = 0;
+    bool m_gizmoCapturingMouse = false;
     std::string m_gpuName;
     std::string m_gpuMemory;
     std::string m_cpuName;

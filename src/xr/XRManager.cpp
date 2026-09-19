@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <GLFW/glfw3.h>
 
 #ifdef CHISEL_ENABLE_OPENXR
 #ifdef _WIN32
@@ -32,6 +33,7 @@ bool XRManager::setSimulationMode(bool enabled, Window& window) {
         return true;
     shutdown();
     m_simulationRequested = enabled;
+    m_simulationWindow = &window;
     if (enabled)
         return true;
     init(window);
@@ -41,6 +43,7 @@ bool XRManager::setSimulationMode(bool enabled, Window& window) {
 }
 
 bool XRManager::init(Window& window) {
+    m_simulationWindow = &window;
     if (m_simulationRequested)
         return false;
 #ifdef CHISEL_ENABLE_OPENXR
@@ -218,6 +221,29 @@ void XRManager::endFrame() {
 }
 
 void XRManager::syncActions() {
+    if (isSimulated() && m_simulationWindow != nullptr) {
+        GLFWwindow* window = m_simulationWindow->getHandle();
+        auto key = [window](int code) { return glfwGetKey(window, code) == GLFW_PRESS; };
+        auto& left = m_simulatedControllers[0];
+        auto& right = m_simulatedControllers[1];
+        left.position = glm::vec3(
+            static_cast<float>(key(GLFW_KEY_D) - key(GLFW_KEY_A)) * 0.03f,
+            static_cast<float>(key(GLFW_KEY_E) - key(GLFW_KEY_Q)) * 0.03f,
+            static_cast<float>(key(GLFW_KEY_S) - key(GLFW_KEY_W)) * 0.03f);
+        right.position = glm::vec3(
+            static_cast<float>(key(GLFW_KEY_RIGHT) - key(GLFW_KEY_LEFT)) * 0.03f,
+            static_cast<float>(key(GLFW_KEY_PAGE_UP) - key(GLFW_KEY_PAGE_DOWN)) * 0.03f,
+            static_cast<float>(key(GLFW_KEY_DOWN) - key(GLFW_KEY_UP)) * 0.03f);
+        left.select = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        right.select = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+        left.trigger = left.select ? 1.0f : 0.0f;
+        right.trigger = right.select ? 1.0f : 0.0f;
+        left.grip = key(GLFW_KEY_LEFT_SHIFT) ? 1.0f : 0.0f;
+        right.grip = key(GLFW_KEY_RIGHT_SHIFT) ? 1.0f : 0.0f;
+        left.menu = key(GLFW_KEY_TAB);
+        right.menu = key(GLFW_KEY_ENTER);
+        return;
+    }
 #ifdef CHISEL_ENABLE_OPENXR
     if (m_session == XR_NULL_HANDLE)
         return;
@@ -230,6 +256,8 @@ void XRManager::syncActions() {
 }
 
 bool XRManager::controllerButtonPressed(uint32_t controller, uint32_t button) const {
+    if (isSimulated())
+        return controller < 2 && button == 0 && m_simulatedControllers[controller].select;
 #ifdef CHISEL_ENABLE_OPENXR
     if (button != 0 || controller > 1)
         return false;
@@ -242,6 +270,20 @@ bool XRManager::controllerButtonPressed(uint32_t controller, uint32_t button) co
 #else
     (void)controller; (void)button;
     return false;
+#endif
+}
+
+XRControllerState XRManager::getControllerState(uint32_t controller) const {
+    if (controller > 1)
+        return {};
+    if (isSimulated())
+        return m_simulatedControllers[controller];
+#ifdef CHISEL_ENABLE_OPENXR
+    XRControllerState state;
+    state.select = controllerButtonPressed(controller, 0);
+    return state;
+#else
+    return {};
 #endif
 }
 

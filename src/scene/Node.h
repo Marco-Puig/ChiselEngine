@@ -34,6 +34,9 @@ public:
     void setScale(glm::vec3 scale) { m_scale = scale; }
     glm::vec3 getScale() const { return m_scale; }
     const std::vector<std::unique_ptr<Node>>& getChildren() const { return m_children; }
+    Node* getParent() const { return m_parent; }
+    void setEditorManipulated(bool manipulated) { m_editorManipulated = manipulated; }
+    bool isEditorManipulated() const { return m_editorManipulated; }
 
 protected:
     std::string m_name;
@@ -41,5 +44,6 @@ protected:
     glm::quat m_rotation;
     glm::vec3 m_scale;
     Node* m_parent;
+    bool m_editorManipulated = false;
     std::vector<std::unique_ptr<Node>> m_children;
 };

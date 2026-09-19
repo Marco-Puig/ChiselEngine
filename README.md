@@ -89,6 +89,39 @@ PhysicsBody* body = PhysicsSystem::getInstance().createRigidBody(rockNode, BodyT
 body->setMass(5.0f);
 ```
 
+### 5. Materials, gizmos, and desktop VR input
+
+`GLBLoader` uploads embedded glTF images and stores the result in the loaded
+`MeshNode`'s `Material`. Base color, normal, metallic-roughness, and emissive
+maps are supported by the default OpenGL shader; models without a material
+continue to use the neutral fallback color.
+
+Select a node in the DevUI to use the Move or Rotate gizmo. ImGuizmo performs
+the screen-ray/handle hit test and updates the node while dragging. While a
+handle is hovered or active, `ArcRotateCamera` gives the mouse to the gizmo
+instead of orbiting or panning.
+
+In Simulated VR mode, the left and right controller action surfaces remain the
+same as OpenXR. The left controller uses `WASD`/`Q`/`E` and the left mouse
+button; the right controller uses the arrow keys/Page Up/Page Down and the
+right mouse button. Shift provides grip, and `Tab`/`Enter` provide menu
+buttons. Gameplay can query `XRManager::getControllerState()` without knowing
+which input backend is active.
+
+### 6. Scene ownership and physics colliders
+
+Use `Scene::create<T>()` for ordinary runtime nodes; it attaches the new node
+to the scene root automatically. Use `Scene::create<T>(parent, ...)` or
+`Scene::adopt()` when a node belongs under an explicit parent. This ownership
+API is intentional: attaching from a C++ constructor would require taking
+ownership of `this` before its `unique_ptr` exists and is unsafe.
+
+`MeshNode` retains its local vertex positions for physics. Rigid bodies created
+from a mesh use a deduplicated Jolt convex hull by default, with a small box
+fallback only for degenerate point sets. Convex hulls are appropriate for
+small convex dynamic props; large or concave static assets such as a detailed
+floor should eventually use a Jolt triangle-mesh shape instead.
+
 ---
 
 ## Quick Start

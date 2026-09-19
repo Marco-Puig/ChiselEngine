@@ -26,6 +26,7 @@ public:
     void addLight(Light* light) { m_lights.push_back(light); }
     void setDesktopCamera(ArcRotateCamera* camera) { m_desktopCamera = camera; }
     void setSkyboxPath(const std::string& path) { m_skyboxPath = path; }
+    DirectionalLight* getDirectionalLight() const;
 
 private:
     RenderSystem() = default;

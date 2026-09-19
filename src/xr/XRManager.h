@@ -1,5 +1,6 @@
 #pragma once
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -9,6 +10,15 @@
 #endif
 
 class Window;
+
+struct XRControllerState {
+    glm::vec3 position{0.0f};
+    glm::quat orientation{1.0f, 0.0f, 0.0f, 0.0f};
+    float trigger = 0.0f;
+    float grip = 0.0f;
+    bool select = false;
+    bool menu = false;
+};
 
 class XRManager {
 public:
@@ -33,6 +43,7 @@ public:
     glm::mat4 getViewMatrix() const { return m_simulationView; }
     glm::mat4 getProjectionMatrix() const { return m_simulationProjection; }
     bool controllerButtonPressed(uint32_t controller, uint32_t button) const;
+    XRControllerState getControllerState(uint32_t controller) const;
 
 private:
     XRManager() = default;
@@ -77,6 +88,8 @@ private:
     std::array<uint32_t, 2> m_viewHeights{0, 0};
     bool m_running = false;
     bool m_simulationRequested = false;
+    Window* m_simulationWindow = nullptr;
+    std::array<XRControllerState, 2> m_simulatedControllers{};
     glm::mat4 m_simulationView{1.0f};
     glm::mat4 m_simulationProjection{1.0f};
 };

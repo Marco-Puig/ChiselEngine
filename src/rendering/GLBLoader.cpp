@@ -1,4 +1,5 @@
 #include "GLBLoader.h"
+#include "Material.h"
 #include <glad/glad.h>
 #include <tiny_gltf.h>
 #include <iostream>
@@ -8,6 +9,89 @@
 #include <vector>
 #include <limits>
 #include <glm/glm.hpp>
+
+namespace {
+GLuint createTexture(const tinygltf::Image& image, bool srgb) {
+    if (image.image.empty() || image.width <= 0 || image.height <= 0)
+        return 0;
+    GLenum format = image.component == 4 ? GL_RGBA : image.component == 3 ? GL_RGB : GL_RED;
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, srgb && format == GL_RGB ? GL_SRGB8 :
+                 srgb && format == GL_RGBA ? GL_SRGB8_ALPHA8 : format,
+                 image.width, image.height, 0, format, GL_UNSIGNED_BYTE,
+                 image.image.data());
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    return texture;
+}
+
+int materialTexture(const tinygltf::Model& model, int textureIndex,
+                    bool srgb) {
+    if (textureIndex < 0 || textureIndex >= static_cast<int>(model.textures.size()))
+        return 0;
+    const int imageIndex = model.textures[textureIndex].source;
+    if (imageIndex < 0 || imageIndex >= static_cast<int>(model.images.size()))
+        return 0;
+    return static_cast<int>(createTexture(model.images[imageIndex], srgb));
+}
+
+void collectSceneMeshes(const tinygltf::Model& model, int nodeIndex,
+                        std::vector<int>& meshes) {
+    if (nodeIndex < 0 || nodeIndex >= static_cast<int>(model.nodes.size())) {
+        std::cerr << "GLB scene references invalid node index " << nodeIndex << '\n';
+        return;
+    }
+    const tinygltf::Node& node = model.nodes[nodeIndex];
+    if (node.mesh >= 0)
+        meshes.push_back(node.mesh);
+    for (int child : node.children)
+        collectSceneMeshes(model, child, meshes);
+}
+
+int findPrimarySceneMesh(const tinygltf::Model& model) {
+    std::vector<int> sceneMeshes;
+    if (model.defaultScene >= 0 &&
+        model.defaultScene < static_cast<int>(model.scenes.size())) {
+        for (int node : model.scenes[model.defaultScene].nodes)
+            collectSceneMeshes(model, node, sceneMeshes);
+    }
+    if (sceneMeshes.empty()) {
+        for (size_t i = 0; i < model.meshes.size(); ++i)
+            sceneMeshes.push_back(static_cast<int>(i));
+        std::cerr << "GLB has no mesh nodes in its default scene; checking all meshes\n";
+    }
+
+    int selected = -1;
+    size_t largestVertexCount = 0;
+    for (int meshIndex : sceneMeshes) {
+        if (meshIndex < 0 || meshIndex >= static_cast<int>(model.meshes.size())) {
+            std::cerr << "GLB scene references invalid mesh index " << meshIndex << '\n';
+            continue;
+        }
+        size_t vertexCount = 0;
+        for (const auto& primitive : model.meshes[meshIndex].primitives) {
+            const auto position = primitive.attributes.find("POSITION");
+            if (position != primitive.attributes.end() &&
+                position->second >= 0 &&
+                position->second < static_cast<int>(model.accessors.size()))
+                vertexCount += model.accessors[position->second].count;
+        }
+        std::cerr << "GLB scene mesh " << meshIndex << " ("
+                  << model.meshes[meshIndex].name << ") has "
+                  << vertexCount << " vertices\n";
+        if (vertexCount > largestVertexCount) {
+            largestVertexCount = vertexCount;
+            selected = meshIndex;
+        }
+    }
+    return selected;
+}
+}
 
 MeshNode* GLBLoader::loadGLB(const std::string& path) {
     tinygltf::Model model;
@@ -40,22 +124,48 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
     if (!loader.LoadBinaryFromMemory(&model, &err, &warn, normalized.data(),
                                      static_cast<unsigned int>(normalized.size())))
         throw std::runtime_error("Failed to load GLB file '" + path + "': " + err);
+    if (!warn.empty())
+        std::cerr << "GLB warning for '" << path << "': " << warn << '\n';
 
-    if (model.meshes.empty() || model.meshes.front().primitives.empty())
+    if (model.meshes.empty())
         throw std::runtime_error("GLB contains no renderable mesh: " + path);
+    const int meshIndex = findPrimarySceneMesh(model);
+    if (meshIndex < 0 || model.meshes[meshIndex].primitives.empty())
+        throw std::runtime_error("GLB scene contains no valid renderable mesh: " + path);
+    const tinygltf::Mesh& sourceMesh = model.meshes[meshIndex];
 
     std::vector<float> vertices;
     std::vector<glm::vec3> positions;
+    std::vector<glm::vec3> sourceNormals;
+    std::vector<glm::vec2> texcoords;
+    int firstMaterialIndex = -1;
     std::vector<unsigned int> indices;
     glm::vec3 boundsMin(std::numeric_limits<float>::max());
     glm::vec3 boundsMax(std::numeric_limits<float>::lowest());
-    for (const auto& primitive : model.meshes.front().primitives) {
+    for (const auto& primitive : sourceMesh.primitives) {
+        if (firstMaterialIndex < 0)
+            firstMaterialIndex = primitive.material;
         const auto positionIt = primitive.attributes.find("POSITION");
         if (positionIt == primitive.attributes.end())
             continue;
-        const tinygltf::Accessor& position = model.accessors.at(positionIt->second);
-        const tinygltf::BufferView& positionView = model.bufferViews.at(position.bufferView);
-        const tinygltf::Buffer& positionBuffer = model.buffers.at(positionView.buffer);
+        if (positionIt->second < 0 ||
+            positionIt->second >= static_cast<int>(model.accessors.size())) {
+            std::cerr << "GLB mesh " << meshIndex << " has invalid POSITION accessor\n";
+            continue;
+        }
+        const tinygltf::Accessor& position = model.accessors[positionIt->second];
+        if (position.bufferView < 0 ||
+            position.bufferView >= static_cast<int>(model.bufferViews.size())) {
+            std::cerr << "GLB mesh " << meshIndex << " has invalid POSITION buffer view\n";
+            continue;
+        }
+        const tinygltf::BufferView& positionView = model.bufferViews[position.bufferView];
+        if (positionView.buffer < 0 ||
+            positionView.buffer >= static_cast<int>(model.buffers.size())) {
+            std::cerr << "GLB mesh " << meshIndex << " has invalid POSITION buffer\n";
+            continue;
+        }
+        const tinygltf::Buffer& positionBuffer = model.buffers[positionView.buffer];
         const size_t stride = position.ByteStride(positionView) != 0
             ? position.ByteStride(positionView)
             : sizeof(float) * 3;
@@ -70,6 +180,35 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
             positions.emplace_back(value[0], value[1], value[2]);
             boundsMin = glm::min(boundsMin, glm::vec3(value[0], value[1], value[2]));
             boundsMax = glm::max(boundsMax, glm::vec3(value[0], value[1], value[2]));
+        }
+
+        const auto normalIt = primitive.attributes.find("NORMAL");
+        if (normalIt != primitive.attributes.end()) {
+            const tinygltf::Accessor& normal = model.accessors.at(normalIt->second);
+            const tinygltf::BufferView& view = model.bufferViews.at(normal.bufferView);
+            const tinygltf::Buffer& buffer = model.buffers.at(view.buffer);
+            const size_t normalStride = normal.ByteStride(view) != 0 ? normal.ByteStride(view) : sizeof(float) * 3;
+            const unsigned char* normalData = buffer.data.data() + view.byteOffset + normal.byteOffset;
+            for (size_t i = 0; i < normal.count; ++i) {
+                const float* value = reinterpret_cast<const float*>(normalData + i * normalStride);
+                sourceNormals.emplace_back(value[0], value[1], value[2]);
+            }
+        } else {
+            sourceNormals.resize(positions.size(), glm::vec3(0.0f));
+        }
+        const auto uvIt = primitive.attributes.find("TEXCOORD_0");
+        if (uvIt != primitive.attributes.end()) {
+            const tinygltf::Accessor& uv = model.accessors.at(uvIt->second);
+            const tinygltf::BufferView& view = model.bufferViews.at(uv.bufferView);
+            const tinygltf::Buffer& buffer = model.buffers.at(view.buffer);
+            const size_t uvStride = uv.ByteStride(view) != 0 ? uv.ByteStride(view) : sizeof(float) * 2;
+            const unsigned char* uvData = buffer.data.data() + view.byteOffset + uv.byteOffset;
+            for (size_t i = 0; i < uv.count; ++i) {
+                const float* value = reinterpret_cast<const float*>(uvData + i * uvStride);
+                texcoords.emplace_back(value[0], value[1]);
+            }
+        } else {
+            texcoords.resize(positions.size(), glm::vec2(0.0f));
         }
 
         if (primitive.indices < 0)
@@ -123,8 +262,13 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
     for (size_t i = 0; i < positions.size(); ++i) {
         const glm::vec3 normal = glm::length(normals[i]) > 0.0f
             ? glm::normalize(normals[i]) : glm::vec3(0.0f, 1.0f, 0.0f);
+        const glm::vec3 sourceNormal = i < sourceNormals.size() ? sourceNormals[i] : normal;
+        const glm::vec3 finalNormal = glm::length(sourceNormal) > 0.0f
+            ? glm::normalize(sourceNormal) : normal;
+        const glm::vec2 uv = i < texcoords.size() ? texcoords[i] : glm::vec2(0.0f);
         vertices.insert(vertices.end(), {positions[i].x, positions[i].y, positions[i].z,
-                                         normal.x, normal.y, normal.z});
+                                         finalNormal.x, finalNormal.y, finalNormal.z,
+                                         uv.x, uv.y});
     }
 
     GLuint vao = 0, vbo = 0, ebo = 0;
@@ -136,15 +280,37 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), nullptr);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), nullptr);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float),
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
                           reinterpret_cast<void*>(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float),
+                          reinterpret_cast<void*>(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
     glBindVertexArray(0);
 
     auto* mesh = new MeshNode("GLB:" + path);
     mesh->setMesh(vao, vbo, ebo, static_cast<int>(indices.size()), true);
     mesh->setBounds(boundsMin, boundsMax);
+    mesh->setCollisionVertices(positions);
+    if (firstMaterialIndex >= 0 &&
+        firstMaterialIndex < static_cast<int>(model.materials.size())) {
+        const tinygltf::Material& source = model.materials[firstMaterialIndex];
+        Material material;
+        const auto& pbr = source.pbrMetallicRoughness;
+        material.baseColorFactor = glm::vec4(
+            static_cast<float>(pbr.baseColorFactor[0]),
+            static_cast<float>(pbr.baseColorFactor[1]),
+            static_cast<float>(pbr.baseColorFactor[2]),
+            static_cast<float>(pbr.baseColorFactor[3]));
+        material.metallicFactor = static_cast<float>(pbr.metallicFactor);
+        material.roughnessFactor = static_cast<float>(pbr.roughnessFactor);
+        material.baseColorTexture = materialTexture(model, pbr.baseColorTexture.index, true);
+        material.metallicRoughnessTexture = materialTexture(model, pbr.metallicRoughnessTexture.index, false);
+        material.normalTexture = materialTexture(model, source.normalTexture.index, false);
+        material.emissiveTexture = materialTexture(model, source.emissiveTexture.index, true);
+        mesh->setMaterial(material);
+    }
     return mesh;
 }

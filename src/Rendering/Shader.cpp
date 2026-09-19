@@ -38,6 +38,10 @@ void Shader::setFloat(const std::string& name, float value) const {
     glUniform1f(glGetUniformLocation(m_id, name.c_str()), value);
 }
 
+void Shader::setVec4(const std::string& name, const glm::vec4& value) const {
+    glUniform4fv(glGetUniformLocation(m_id, name.c_str()), 1, glm::value_ptr(value));
+}
+
 std::string Shader::loadShaderSource(const std::string& path) {
     std::ifstream file(path);
     if (!file) throw std::runtime_error("Failed to open shader: " + path);

@@ -25,6 +25,9 @@ public:
     ~PhysicsBody();
 
     void syncFromPhysics();
+    void syncToPhysics();
+    void beginEditorManipulation();
+    void endEditorManipulation();
     void appendDebugLines(std::vector<PhysicsDebugLine>& lines) const;
 
 private:
@@ -51,6 +54,8 @@ public:
     void update(float renderDeltaTime);
     void setDebugDrawEnabled(bool enabled) { m_debugDrawEnabled = enabled; }
     bool isDebugDrawEnabled() const { return m_debugDrawEnabled; }
+    void beginEditorManipulation(Node* node);
+    void endEditorManipulation(Node* node);
     std::vector<PhysicsDebugLine> getDebugLines() const;
 
 private:
