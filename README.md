@@ -11,7 +11,7 @@ ChiselEngine is a easy to use VR game engine built on **OpenXR** and **OpenGL**.
 
 ChiselEngine is built on the principle of **"Zero-Friction Development."** The architecture is designed so that a developer can focus on gameplay logic without needing to be an expert in OpenGL, OpenXR, or multi-threaded physics.
 
-### 2. Node-Based Scene Graph (Babylon.js Inspired)
+### Node-Based Scene Graph (Babylon.js Inspired)
 Everything in the world is a `Node`. Whether it's a camera, a light, or a 3D model, they all inherit from a common base. This allows for:
 - **Hierarchical Transforms**: Parent-child relationships for complex objects.
 - **Uniform Interaction**: An `Animator` can drive any `Node`, regardless of what it is.
@@ -37,7 +37,7 @@ VR development is traditionally slow because of the "Headset Cycle" (Put on head
 
 As a developer, you don't touch the `Core`, `XR`, or `Rendering` modules. You spend 100% of your time in the **`Game`** class and the **`Scene`** module.
 
-### 1. Define your World (`start()`)
+### 1. Setup the scene (`start()`)
 In the `start()` method, you set up your environment. You load your models as **Nodes** and define your lighting.
 
 ```cpp
@@ -52,7 +52,7 @@ void Game::start() {
 }
 ```
 
-### 2. Create Life (`update()`)
+### 2. Create an active node (`update()`)
 In the `update()` method, you define how the world changes over time. You can use the `Animator` to create movement.
 
 ```cpp
@@ -67,7 +67,7 @@ void Game::update(float deltaTime) {
 }
 ```
 
-### 3. Procedural animation
+### Procedural animation
 
 `Animator::procedural` registers a continuous transform update in radians or world units per second:
 
@@ -78,7 +78,7 @@ animator->procedural(cube, Axis::Y, Direction::Positive,
 
 The sample game uses this API to rotate the bundled cube every frame.
 
-### 4. Physics Interaction
+### Physics Interaction
 To make an object physical, simply wrap the node in a `PhysicsBody`.
 
 ```cpp
@@ -86,7 +86,7 @@ PhysicsBody* body = PhysicsSystem::getInstance().createRigidBody(rockNode, BodyT
 body->setMass(5.0f);
 ```
 
-### 5. Materials, gizmos, and desktop VR input
+### Materials, gizmos, and desktop VR input
 
 `GLBLoader` uploads embedded glTF images and stores the result in the loaded
 `MeshNode`'s `Material`. Base color, normal, metallic-roughness, and emissive
@@ -105,7 +105,7 @@ right mouse button. Shift provides grip, and `Tab`/`Enter` provide menu
 buttons. Gameplay can query `XRManager::getControllerState()` without knowing
 which input backend is active.
 
-### 6. Scene ownership and physics colliders
+### Scene ownership and physics colliders
 
 Use `Scene::create<T>()` for ordinary runtime nodes; it attaches the new node
 to the scene root automatically. Use `Scene::create<T>(parent, ...)` or
