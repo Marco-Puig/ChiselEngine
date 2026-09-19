@@ -9,17 +9,14 @@ ChiselEngine is a easy to use VR game engine built on **OpenXR** and **OpenGL**.
 
 ## Design Philosophy
 
-ChiselEngine is built on the principle of **"Zero-Friction Development."** The architecture is designed so that a developer can focus on gameplay logic without needing to be an expert in Vulkan, OpenXR, or multi-threaded physics.
-
-### 1. Modular Singleton Architecture
-Instead of a monolithic "Engine" class, the engine is split into independent, specialized modules. This allows for easier debugging, faster compile times, and the ability to swap out systems (e.g., switching from OpenGL to Vulkan) without rewriting the game logic.
+ChiselEngine is built on the principle of **"Zero-Friction Development."** The architecture is designed so that a developer can focus on gameplay logic without needing to be an expert in OpenGL, OpenXR, or multi-threaded physics.
 
 ### 2. Node-Based Scene Graph (Babylon.js Inspired)
 Everything in the world is a `Node`. Whether it's a camera, a light, or a 3D model, they all inherit from a common base. This allows for:
 - **Hierarchical Transforms**: Parent-child relationships for complex objects.
 - **Uniform Interaction**: An `Animator` can drive any `Node`, regardless of what it is.
 
-### 3. VR-First Workflow
+### VR-First Workflow
 VR development is traditionally slow because of the "Headset Cycle" (Put on headset $\rightarrow$ Test $\rightarrow$ Take off headset $\rightarrow$ Fix code). ChiselEngine breaks this with **VR Simulation Mode**, allowing developers to test movements and logic in a desktop window before deploying to hardware.
 
 ---
