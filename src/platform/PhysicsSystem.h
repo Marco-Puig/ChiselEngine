@@ -40,6 +40,7 @@ private:
 #ifdef CHISEL_ENABLE_JOLT
     JPH::BodyID m_bodyID;
     JPH::ShapeRefC m_shape;
+    mutable bool m_debugWarningLogged = false;
 #endif
 };
 
@@ -54,6 +55,7 @@ public:
                                  float friction = 0.5f,
                                  float restitution = 0.1f);
     void update(float renderDeltaTime);
+    void syncAnimationDrivenNodes();
     void setDebugDrawEnabled(bool enabled) { m_debugDrawEnabled = enabled; }
     bool isDebugDrawEnabled() const { return m_debugDrawEnabled; }
     void beginEditorManipulation(Node* node);

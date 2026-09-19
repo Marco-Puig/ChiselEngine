@@ -5,6 +5,7 @@ class Window;
 class XRManager;
 class Node;
 class ArcRotateCamera;
+class Animator;
 
 class SceneEditor {
 public:
@@ -15,7 +16,7 @@ public:
     void beginFrame();
     void updateGizmo(Node* sceneRoot, ArcRotateCamera* camera);
     void render(Window& window, XRManager& xr, Node* sceneRoot,
-                ArcRotateCamera* camera, float deltaTime);
+                ArcRotateCamera* camera, Animator* animator, float deltaTime);
     bool isVisible() const { return m_visible; }
     static bool isGizmoCapturingMouse();
 
@@ -41,6 +42,8 @@ private:
     float m_intervalTime = 0.0f;
     uint32_t m_intervalFrames = 0;
     bool m_showCollisionDebug = false;
+    bool m_showMeshes = false;
+    bool m_vsync = true;
     Node* m_selectedNode = nullptr;
     Node* m_manipulatedNode = nullptr;
     int m_gizmoOperation = 0;

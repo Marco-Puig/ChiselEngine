@@ -6,8 +6,44 @@
 #include "scene/ArcRotateCamera.h"
 #include <glad/glad.h>
 #include <chrono>
+#include <exception>
+#include <iostream>
+#include <cstdio>
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+namespace {
+#ifdef _WIN32
+LONG WINAPI engineUnhandledException(EXCEPTION_POINTERS* info) noexcept {
+    const DWORD code = info != nullptr && info->ExceptionRecord != nullptr
+        ? info->ExceptionRecord->ExceptionCode : 0;
+    char message[128] = {};
+    std::snprintf(message, sizeof(message),
+                  "[Engine] unhandled SEH exception: 0x%08lX\n",
+                  static_cast<unsigned long>(code));
+    std::cerr << message;
+    std::cerr.flush();
+    OutputDebugStringA(message);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
+[[noreturn]] void engineTerminate() noexcept {
+    std::cerr << "[Engine] std::terminate called\n";
+    std::cerr.flush();
+#ifdef _WIN32
+    OutputDebugStringA("[Engine] std::terminate called\n");
+#endif
+    std::abort();
+}
+}
 
 void Engine::init() {
+    std::set_terminate(engineTerminate);
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(engineUnhandledException);
+#endif
     m_window = std::make_unique<Window>(1280, 720, "ChiselEngine");
     RenderSystem::getInstance().init();
     XRManager::getInstance().init(*m_window);
@@ -34,8 +70,8 @@ void Engine::run(IGame* game) {
         m_window->pollEvents();
         SceneEditor::getInstance().beginFrame();
         SceneEditor::getInstance().updateGizmo(game->getSceneRoot(), game->getCamera());
-        game->update(dt);
         PhysicsSystem::getInstance().update(dt);
+        game->update(dt);
         xr.syncActions();
         if (xr.beginFrame()) {
             for (uint32_t eye = 0; eye < 2; ++eye) {
@@ -70,7 +106,7 @@ void Engine::run(IGame* game) {
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         SceneEditor::getInstance().render(*m_window, xr, game->getSceneRoot(),
-                                    game->getCamera(), dt);
+                                    game->getCamera(), game->getAnimator(), dt);
         m_window->swapBuffers();
     }
 

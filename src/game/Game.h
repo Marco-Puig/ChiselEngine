@@ -13,6 +13,7 @@ public:
     void update(float deltaTime) override;
     Node* getSceneRoot() const { return scene->getRoot(); }
     ArcRotateCamera* getCamera() const override { return camera.get(); }
+    Animator* getAnimator() const override { return animator.get(); }
 
 private:
     std::unique_ptr<Scene> scene;

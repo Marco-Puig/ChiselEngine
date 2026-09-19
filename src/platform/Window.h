@@ -10,6 +10,7 @@ public:
     bool shouldClose() const;
     void pollEvents();
     void swapBuffers();
+    void setVSync(bool enabled);
     void setResizeTarget(class ArcRotateCamera* camera);
     class ArcRotateCamera* getResizeCamera() const { return m_resizeCamera; }
     

@@ -2,9 +2,17 @@
 #include "scene/MeshNode.h"
 #include <array>
 #include <algorithm>
+#include <iostream>
+#include <cstdarg>
+#include <cstdio>
+#include <exception>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #ifdef CHISEL_ENABLE_JOLT
 #include <Jolt/Core/Factory.h>
+#include <Jolt/Core/IssueReporting.h>
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
@@ -15,6 +23,39 @@
 #include <Jolt/Physics/Collision/ObjectLayer.h>
 
 namespace {
+bool joltAssertFailed(const char* expression, const char* message,
+                      const char* file, JPH::uint line) {
+    std::cerr << "[Jolt] assertion failed: " << (expression ? expression : "")
+              << " at " << (file ? file : "<unknown>") << ':' << line;
+    if (message != nullptr)
+        std::cerr << " - " << message;
+    std::cerr << '\n';
+    std::cerr.flush();
+#ifdef _WIN32
+    std::string diagnostic = "[Jolt] assertion failed: ";
+    diagnostic += expression != nullptr ? expression : "<unknown>";
+    diagnostic += " at ";
+    diagnostic += file != nullptr ? file : "<unknown>";
+    diagnostic += ':' + std::to_string(line) + '\n';
+    OutputDebugStringA(diagnostic.c_str());
+#endif
+    return false;
+}
+
+void joltTrace(const char* format, ...) {
+    char buffer[2048] = {};
+    va_list args;
+    va_start(args, format);
+    vsnprintf_s(buffer, sizeof(buffer), _TRUNCATE, format, args);
+    va_end(args);
+    std::cerr << "[Jolt] " << buffer << '\n';
+    std::cerr.flush();
+#ifdef _WIN32
+    OutputDebugStringA(buffer);
+    OutputDebugStringA("\n");
+#endif
+}
+
 constexpr JPH::ObjectLayer cNonMoving = 0;
 constexpr JPH::ObjectLayer cMoving = 1;
 constexpr JPH::BroadPhaseLayer cBroadPhaseNonMoving(0);
@@ -65,7 +106,7 @@ PhysicsBody::~PhysicsBody() = default;
 
 void PhysicsBody::syncFromPhysics() {
 #ifdef CHISEL_ENABLE_JOLT
-    if (m_bodyID.IsInvalid())
+    if (m_node == nullptr || m_bodyID.IsInvalid())
         return;
     JPH::RVec3 position;
     JPH::Quat rotation;
@@ -74,8 +115,10 @@ void PhysicsBody::syncFromPhysics() {
     m_node->setPosition(glm::vec3(static_cast<float>(position.GetX()),
                                   static_cast<float>(position.GetY()),
                                   static_cast<float>(position.GetZ())));
-    m_node->setRotation(glm::quat(rotation.GetW(), rotation.GetX(),
-                                  rotation.GetY(), rotation.GetZ()));
+    if (!m_node->isAnimationDriven()) {
+        m_node->setRotation(glm::quat(rotation.GetW(), rotation.GetX(),
+                                      rotation.GetY(), rotation.GetZ()));
+    }
 #endif
 }
 
@@ -124,22 +167,53 @@ void PhysicsBody::endEditorManipulation() {
 
 void PhysicsBody::appendDebugLines(std::vector<PhysicsDebugLine>& lines) const {
 #ifdef CHISEL_ENABLE_JOLT
-    if (m_bodyID.IsInvalid() || m_shape == nullptr)
+    if (m_node == nullptr || m_bodyID.IsInvalid() || m_shape == nullptr)
         return;
+    const auto& bodyInterface =
+        PhysicsSystem::getInstance().m_physicsSystem.GetBodyInterface();
+    if (!bodyInterface.IsAdded(m_bodyID)) {
+        if (!m_debugWarningLogged) {
+            std::cerr << "[Physics] Skipping collision debug for a body that is "
+                         "no longer registered\n";
+            m_debugWarningLogged = true;
+        }
+        return;
+    }
     JPH::RVec3 position;
     JPH::Quat rotation;
-    PhysicsSystem::getInstance().m_physicsSystem.GetBodyInterface().GetPositionAndRotation(
-        m_bodyID, position, rotation);
+    bodyInterface.GetPositionAndRotation(m_bodyID, position, rotation);
     const glm::quat q(rotation.GetW(), rotation.GetX(), rotation.GetY(), rotation.GetZ());
     const glm::vec3 center(static_cast<float>(position.GetX()),
                            static_cast<float>(position.GetY()),
                            static_cast<float>(position.GetZ()));
+    if (m_shape->GetSubType() != JPH::EShapeSubType::ConvexHull) {
+        if (!m_debugWarningLogged) {
+            std::cerr << "[Physics] Skipping collision debug for unsupported "
+                         "shape type\n";
+            m_debugWarningLogged = true;
+        }
+        return;
+    }
     if (const auto* hull = dynamic_cast<const JPH::ConvexHullShape*>(m_shape.GetPtr())) {
         for (uint32_t faceIndex = 0; faceIndex < hull->GetNumFaces(); ++faceIndex) {
             const uint32_t count = hull->GetNumVerticesInFace(faceIndex);
+            if (count < 2)
+                continue;
             std::vector<uint32_t> face(count);
-            hull->GetFaceVertices(faceIndex, count, face.data());
+            const uint32_t written = hull->GetFaceVertices(
+                faceIndex, count, face.data());
+            if (written != count)
+                continue;
             for (uint32_t i = 0; i < count; ++i) {
+                if (face[i] >= hull->GetNumPoints() ||
+                    face[(i + 1) % count] >= hull->GetNumPoints()) {
+                    if (!m_debugWarningLogged) {
+                        std::cerr << "[Physics] Skipping collision debug face "
+                                     "with an invalid vertex index\n";
+                        m_debugWarningLogged = true;
+                    }
+                    break;
+                }
                 const JPH::Vec3 a = hull->GetPoint(face[i]);
                 const JPH::Vec3 b = hull->GetPoint(face[(i + 1) % count]);
                 const glm::vec3 from = center + q * glm::vec3(a.GetX(), a.GetY(), a.GetZ());
@@ -160,14 +234,22 @@ PhysicsSystem& PhysicsSystem::getInstance() {
 
 void PhysicsSystem::beginEditorManipulation(Node* node) {
     for (auto& body : m_bodies)
-        if (body->m_node == node)
+        if (body != nullptr && body->m_node == node)
             body->beginEditorManipulation();
 }
 
 void PhysicsSystem::endEditorManipulation(Node* node) {
     for (auto& body : m_bodies)
-        if (body->m_node == node)
+        if (body != nullptr && body->m_node == node)
             body->endEditorManipulation();
+}
+
+void PhysicsSystem::syncAnimationDrivenNodes() {
+    for (const auto& body : m_bodies) {
+        if (body != nullptr && body->m_node != nullptr &&
+            body->m_node->isAnimationDriven())
+            body->syncToPhysics();
+    }
 }
 
 PhysicsSystem::~PhysicsSystem() {
@@ -179,6 +261,8 @@ void PhysicsSystem::init() {
         return;
 #ifdef CHISEL_ENABLE_JOLT
     JPH::RegisterDefaultAllocator();
+    JPH::Trace = joltTrace;
+    JPH::AssertFailed = joltAssertFailed;
     JPH::Factory::sInstance = new JPH::Factory();
     JPH::RegisterTypes();
     m_tempAllocator = new JPH::TempAllocatorImpl(10 * 1024 * 1024);
@@ -208,6 +292,10 @@ void PhysicsSystem::shutdown() {
 PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
                                              const glm::vec3& size,
                                              float friction, float restitution) {
+    if (node == nullptr) {
+        std::cerr << "[Physics] Cannot create rigid body for a null node\n";
+        return nullptr;
+    }
     if (!m_initialized)
         init();
     auto body = std::make_unique<PhysicsBody>(node, type, size);
@@ -256,7 +344,13 @@ PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
             settings, motion == JPH::EMotionType::Static ? JPH::EActivation::DontActivate :
             JPH::EActivation::Activate);
         if (bodyID.IsInvalid()) {
-            std::cerr << "Jolt rigid body creation failed" << std::endl;
+            std::cerr << "[Physics] Failed to create fallback rigid body for node '"
+                      << node->getName() << "'\n";
+            return nullptr;
+        }
+        if (!m_physicsSystem.GetBodyInterface().IsAdded(bodyID)) {
+            std::cerr << "[Physics] Fallback rigid body was not added for node '"
+                      << node->getName() << "'\n";
             return nullptr;
         }
         result->m_bodyID = bodyID;
@@ -264,18 +358,34 @@ PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
         m_bodies.push_back(std::move(body));
         return result;
     }
-    JPH::ConvexHullShapeSettings shapeSettings(hullPoints.data(),
-                                                static_cast<int>(hullPoints.size()));
+    const glm::vec3 safeSize = glm::max(size, glm::vec3(0.01f));
+    JPH::ConvexHullShapeSettings shapeSettings(
+        hullPoints.data(), static_cast<int>(hullPoints.size()));
     const JPH::ShapeSettings::ShapeResult shape = shapeSettings.Create();
+    JPH::ShapeRefC collisionShape;
     if (shape.HasError()) {
-        std::cerr << "Jolt shape creation failed: " << shape.GetError() << std::endl;
-        return nullptr;
+        std::cerr << "[Physics] Convex hull creation failed for node '"
+                  << node->getName() << "': " << shape.GetError()
+                  << "; using bounds box fallback\n";
+        JPH::BoxShapeSettings fallbackSettings(
+            JPH::Vec3(safeSize.x * 0.5f, safeSize.y * 0.5f, safeSize.z * 0.5f),
+            0.0f);
+        const JPH::ShapeSettings::ShapeResult fallback =
+            fallbackSettings.Create();
+        if (fallback.HasError()) {
+            std::cerr << "[Physics] Bounds box fallback failed: "
+                      << fallback.GetError() << '\n';
+            return nullptr;
+        }
+        collisionShape = fallback.Get();
+    } else {
+        collisionShape = shape.Get();
     }
     const JPH::EMotionType motion = type == BodyType::Static ? JPH::EMotionType::Static :
         type == BodyType::Kinematic ? JPH::EMotionType::Kinematic : JPH::EMotionType::Dynamic;
     const JPH::ObjectLayer layer = motion == JPH::EMotionType::Static ? cNonMoving : cMoving;
     JPH::BodyCreationSettings settings(
-        shape.Get(), JPH::RVec3(node->getPosition().x, node->getPosition().y, node->getPosition().z),
+        collisionShape, JPH::RVec3(node->getPosition().x, node->getPosition().y, node->getPosition().z),
         JPH::Quat(node->getRotation().x, node->getRotation().y,
                   node->getRotation().z, node->getRotation().w),
         motion, layer);
@@ -285,11 +395,17 @@ PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
         settings, motion == JPH::EMotionType::Static ? JPH::EActivation::DontActivate :
         JPH::EActivation::Activate);
     if (bodyID.IsInvalid()) {
-        std::cerr << "Jolt rigid body creation failed" << std::endl;
+        std::cerr << "[Physics] Failed to create rigid body for node '"
+                  << node->getName() << "'\n";
+        return nullptr;
+    }
+    if (!m_physicsSystem.GetBodyInterface().IsAdded(bodyID)) {
+        std::cerr << "[Physics] Rigid body was not added for node '"
+                  << node->getName() << "'\n";
         return nullptr;
     }
     result->m_bodyID = bodyID;
-    result->m_shape = shape.Get();
+    result->m_shape = collisionShape;
 #else
     (void)friction;
     (void)restitution;
@@ -311,6 +427,8 @@ void PhysicsSystem::update(float renderDeltaTime) {
         m_accumulator -= fixedStep;
     }
     for (auto& body : m_bodies) {
+        if (body == nullptr || body->m_node == nullptr)
+            continue;
         if (body->m_node->isEditorManipulated())
             body->syncToPhysics();
         else
@@ -322,7 +440,21 @@ std::vector<PhysicsDebugLine> PhysicsSystem::getDebugLines() const {
     std::vector<PhysicsDebugLine> lines;
     if (!m_debugDrawEnabled)
         return lines;
-    for (const auto& body : m_bodies)
-        body->appendDebugLines(lines);
+    for (const auto& body : m_bodies) {
+        if (body == nullptr)
+            continue;
+#if defined(_CPPUNWIND)
+        try {
+#endif
+            body->appendDebugLines(lines);
+#if defined(_CPPUNWIND)
+        } catch (const std::exception& error) {
+            std::cerr << "[Physics] Collision debug skipped body after exception: "
+                      << error.what() << '\n';
+        } catch (...) {
+            std::cerr << "[Physics] Collision debug skipped body after unknown exception\n";
+        }
+#endif
+    }
     return lines;
 }

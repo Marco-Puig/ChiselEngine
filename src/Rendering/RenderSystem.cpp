@@ -7,6 +7,8 @@
 #include <stb_image.h>
 #include <fstream>
 #include <stdexcept>
+#include <iostream>
+#include <limits>
 
 DirectionalLight* RenderSystem::getDirectionalLight() const {
     for (Light* light : m_lights)
@@ -128,15 +130,36 @@ void RenderSystem::renderSkybox(const glm::mat4& view, const glm::mat4& projecti
 }
 
 void RenderSystem::renderCollisionDebug(const glm::mat4& view, const glm::mat4& projection) {
+#if defined(_CPPUNWIND)
+    try {
+#endif
     const std::vector<PhysicsDebugLine> lines = PhysicsSystem::getInstance().getDebugLines();
     if (lines.empty())
         return;
-    std::vector<glm::vec3> vertices;
-    vertices.reserve(lines.size() * 2);
-    for (const PhysicsDebugLine& line : lines) {
-        vertices.push_back(line.from);
-        vertices.push_back(line.to);
+    if (m_debugShader == nullptr || m_debugVao == 0 || m_debugVbo == 0) {
+        std::cerr << "[Render] Collision debug resources are unavailable\n";
+        return;
     }
+    if (lines.size() > static_cast<size_t>(std::numeric_limits<GLsizei>::max() / 2)) {
+        std::cerr << "[Render] Collision debug geometry is too large; skipping\n";
+        return;
+    }
+    std::vector<glm::vec3> vertices;
+#if defined(_CPPUNWIND)
+    try {
+#endif
+        vertices.reserve(lines.size() * 2);
+        for (const PhysicsDebugLine& line : lines) {
+            vertices.push_back(line.from);
+            vertices.push_back(line.to);
+        }
+#if defined(_CPPUNWIND)
+    } catch (const std::exception& error) {
+        std::cerr << "[Render] Collision debug vertex allocation failed: "
+                  << error.what() << '\n';
+        return;
+    }
+#endif
     m_debugShader->use();
     m_debugShader->setMat4("uView", view);
     m_debugShader->setMat4("uProjection", projection);
@@ -149,6 +172,14 @@ void RenderSystem::renderCollisionDebug(const glm::mat4& view, const glm::mat4& 
     glLineWidth(2.0f);
     glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size()));
     glBindVertexArray(0);
+#if defined(_CPPUNWIND)
+    } catch (const std::exception& error) {
+        std::cerr << "[Render] Collision debug skipped after exception: "
+                  << error.what() << '\n';
+    } catch (...) {
+        std::cerr << "[Render] Collision debug skipped after unknown exception\n";
+    }
+#endif
 }
 
 void RenderSystem::traverseAndRender(Node* node) {

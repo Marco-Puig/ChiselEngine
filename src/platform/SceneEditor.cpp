@@ -7,6 +7,8 @@
 #include "scene/ArcRotateCamera.h"
 #include "rendering/RenderSystem.h"
 #include "rendering/Light.h"
+#include "scene/MeshNode.h"
+#include "scene/Animator.h"
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -21,6 +23,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <functional>
+#include <iostream>
 #include <fstream>
 #include <stdexcept>
 
@@ -186,19 +189,34 @@ void SceneEditor::selectLightAtCursor(Node* sceneRoot, ArcRotateCamera* camera) 
 }
 
 namespace {
-void drawNodeList(Node* node, Node*& selected) {
+void drawNodeList(Node* node, Node*& selected, const Animator* animator) {
     if (node == nullptr)
         return;
     const bool isSelected = selected == node;
+    const std::vector<std::string> animations =
+        animator != nullptr ? animator->getAnimationLabels(node) :
+                              std::vector<std::string>();
     if (ImGui::Selectable(node->getName().c_str(), isSelected))
         selected = node;
+    if (!animations.empty()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "[ANIM]");
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted("Animations");
+            for (const std::string& label : animations)
+                ImGui::BulletText("%s", label.c_str());
+            ImGui::EndTooltip();
+        }
+    }
     for (const auto& child : node->getChildren())
-        drawNodeList(child.get(), selected);
+        drawNodeList(child.get(), selected, animator);
 }
 }
 
 void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
-                   ArcRotateCamera* camera, float deltaTime) {
+                   ArcRotateCamera* camera, Animator* animator,
+                   float deltaTime) {
     (void)camera;
     if (!m_initialized)
         return;
@@ -247,13 +265,20 @@ void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
                 xr.setSimulationMode(m_simulatedVR, window);
             ImGui::SameLine();
             if (m_simulatedVR)
-                ImGui::TextUnformatted("Desktop stereo simulation");
+                ImGui::TextUnformatted("Desktop Simulation");
             else if (xr.isRunning())
                 ImGui::TextUnformatted("OpenXR runtime");
             else
                 ImGui::TextUnformatted("OpenXR unavailable; desktop fallback");
             if (ImGui::Checkbox("Show Collision Debug", &m_showCollisionDebug))
                 PhysicsSystem::getInstance().setDebugDrawEnabled(m_showCollisionDebug);
+            if (ImGui::Checkbox("V-Sync", &m_vsync))
+                window.setVSync(m_vsync);
+            if (ImGui::Checkbox("Show Meshes", &m_showMeshes) && m_showMeshes) {
+                if (sceneRoot == nullptr) {
+                    std::cerr << "[Scene Editor] Cannot show meshes: scene root is null\n";
+                }
+            }
             if (DirectionalLight* light = RenderSystem::getInstance().getDirectionalLight()) {
                 float intensity = light->getIntensity();
                 float exposure = light->getExposure();
@@ -265,8 +290,28 @@ void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
             ImGui::Separator();
             ImGui::TextUnformatted("Scene nodes");
             ImGui::BeginChild("SceneEditor.NodeList", ImVec2(0.0f, 90.0f), true);
-            drawNodeList(sceneRoot, m_selectedNode);
+            drawNodeList(sceneRoot, m_selectedNode, animator);
             ImGui::EndChild();
+            if (m_showMeshes) {
+                ImGui::Separator();
+                ImGui::TextUnformatted("Meshes");
+                ImGui::BeginChild("SceneEditor.MeshList", ImVec2(0.0f, 90.0f), true);
+                std::function<void(Node*)> drawMeshes = [&](Node* node) {
+                    if (node == nullptr)
+                        return;
+                    if (dynamic_cast<MeshNode*>(node) != nullptr)
+                        ImGui::BulletText("%s", node->getName().c_str());
+                    for (const auto& child : node->getChildren()) {
+                        if (child != nullptr)
+                            drawMeshes(child.get());
+                    }
+                };
+                if (sceneRoot != nullptr)
+                    drawMeshes(sceneRoot);
+                else
+                    ImGui::TextUnformatted("No scene loaded");
+                ImGui::EndChild();
+            }
             if (ImGui::RadioButton("Move", m_gizmoOperation == 0))
                 m_gizmoOperation = 0;
             ImGui::SameLine();

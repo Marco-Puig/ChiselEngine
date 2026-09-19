@@ -9,13 +9,19 @@ enum class TransformType { Rotation, Position };
 
 class Animator {
 public:
+    struct AnimationInfo {
+        Node* node;
+        std::string label;
+    };
     explicit Animator(Node* target = nullptr) : m_target(target) {}
 
     void procedural(Node* node, Axis axis, Direction direction,
                     TransformType type, float speed) {
         if (node == nullptr || speed < 0.0f)
             return;
-        m_procedures.push_back({node, axis, direction, type, speed});
+        node->setAnimationDriven(true);
+        m_procedures.push_back({node, axis, direction, type, speed,
+                                makeLabel(axis, direction, type, speed)});
     }
 
     void update(float deltaTime) {
@@ -64,13 +70,36 @@ public:
         (void)animName;
     }
 
+    std::vector<std::string> getAnimationLabels(const Node* node) const {
+        std::vector<std::string> result;
+        for (const Procedure& procedure : m_procedures) {
+            if (procedure.node != node)
+                continue;
+            result.push_back(procedure.label);
+        }
+        return result;
+    }
+
 private:
+    static std::string makeLabel(Axis axis, Direction direction,
+                                 TransformType type, float speed) {
+        const char* axisName = axis == Axis::X ? "X" :
+                               axis == Axis::Y ? "Y" : "Z";
+        const char* typeName = type == TransformType::Rotation ?
+                               "Rotation" : "Position";
+        const char* directionName = direction == Direction::Positive ?
+                                     "+" : "-";
+        return std::string(typeName) + " " + axisName + " (" +
+               directionName + ", " + std::to_string(speed) + "/s)";
+    }
+
     struct Procedure {
         Node* node;
         Axis axis;
         Direction direction;
         TransformType type;
         float speed;
+        std::string label;
     };
 
     Node* m_target = nullptr;

@@ -38,6 +38,8 @@ public:
     Node* getParent() const { return m_parent; }
     void setEditorManipulated(bool manipulated) { m_editorManipulated = manipulated; }
     bool isEditorManipulated() const { return m_editorManipulated; }
+    void setAnimationDriven(bool driven) { m_animationDriven = driven; }
+    bool isAnimationDriven() const { return m_animationDriven; }
 
 protected:
     std::string m_name;
@@ -46,5 +48,6 @@ protected:
     glm::vec3 m_scale;
     Node* m_parent;
     bool m_editorManipulated = false;
+    bool m_animationDriven = false;
     std::vector<std::unique_ptr<Node>> m_children;
 };

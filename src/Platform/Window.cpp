@@ -39,6 +39,7 @@ Window::Window(int width, int height, const std::string& title) {
     glfwSetWindowUserPointer(m_window, this);
     glfwSetFramebufferSizeCallback(m_window, framebufferSizeCallback);
     glfwSetScrollCallback(m_window, scrollCallback);
+    glfwSwapInterval(1);
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) {
         glfwDestroyWindow(m_window);
         glfwTerminate();
@@ -61,6 +62,13 @@ void Window::pollEvents() {
 
 void Window::swapBuffers() {
     glfwSwapBuffers(m_window);
+}
+
+void Window::setVSync(bool enabled) {
+    if (m_window == nullptr)
+        return;
+    glfwMakeContextCurrent(m_window);
+    glfwSwapInterval(enabled ? 1 : 0);
 }
 
 void Window::setResizeTarget(ArcRotateCamera* camera) {
