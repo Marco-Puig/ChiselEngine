@@ -6,9 +6,9 @@ class XRManager;
 class Node;
 class ArcRotateCamera;
 
-class DevUI {
+class SceneEditor {
 public:
-    static DevUI& getInstance();
+    static SceneEditor& getInstance();
 
     void init(Window& window);
     void shutdown();
@@ -20,10 +20,10 @@ public:
     static bool isGizmoCapturingMouse();
 
 private:
-    DevUI() = default;
-    ~DevUI();
-    DevUI(const DevUI&) = delete;
-    DevUI& operator=(const DevUI&) = delete;
+    SceneEditor() = default;
+    ~SceneEditor();
+    SceneEditor(const SceneEditor&) = delete;
+    SceneEditor& operator=(const SceneEditor&) = delete;
 
     void querySystemInfo();
     void selectLightAtCursor(Node* sceneRoot, ArcRotateCamera* camera);

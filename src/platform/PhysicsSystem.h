@@ -8,6 +8,7 @@
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Body/BodyID.h>
+#include <Jolt/Physics/Collision/Shape/Shape.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Core/JobSystem.h>
 #endif
@@ -38,6 +39,7 @@ private:
     glm::vec3 m_size;
 #ifdef CHISEL_ENABLE_JOLT
     JPH::BodyID m_bodyID;
+    JPH::ShapeRefC m_shape;
 #endif
 };
 

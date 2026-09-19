@@ -3,6 +3,7 @@
 #include "scene/Scene.h"
 #include "scene/Animator.h"
 #include "scene/ArcRotateCamera.h"
+#include "scripting/LuaRuntime.h"
 #include <memory>
 
 class Game : public IGame {
@@ -16,7 +17,6 @@ public:
 private:
     std::unique_ptr<Scene> scene;
     std::unique_ptr<Animator> animator;
-    Node* frog = nullptr;
-    Node* plane = nullptr;
+    std::unique_ptr<LuaRuntime> luaRuntime;
     std::unique_ptr<ArcRotateCamera> camera;
 };

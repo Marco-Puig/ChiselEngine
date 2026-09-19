@@ -1,6 +1,6 @@
 #include "ArcRotateCamera.h"
 #include "platform/Window.h"
-#include "platform/DevUI.h"
+#include "platform/SceneEditor.h"
 #include <imgui.h>
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -43,7 +43,7 @@ void ArcRotateCamera::update(float deltaTime) {
     GLFWwindow* handle = m_window->getHandle();
     const ImGuiIO& io = ImGui::GetIO();
     if (io.WantCaptureMouse || io.WantCaptureKeyboard ||
-        DevUI::isGizmoCapturingMouse())
+        SceneEditor::isGizmoCapturingMouse())
         return;
     double mouseX = 0.0;
     double mouseY = 0.0;

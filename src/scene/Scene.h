@@ -3,6 +3,7 @@
 #include "Node.h"
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 class Scene {
@@ -10,6 +11,10 @@ public:
     Scene() : m_root(std::make_unique<Node>("Root")) {}
 
     Node* getRoot() const { return m_root.get(); }
+
+    Node* findByName(const std::string& name) const {
+        return findByName(*m_root, name);
+    }
 
     template <typename T, typename... Args>
     T* create(Args&&... args) {
@@ -36,5 +41,15 @@ public:
     }
 
 private:
+    static Node* findByName(Node& node, const std::string& name) {
+        if (node.getName() == name)
+            return &node;
+        for (const auto& child : node.getChildren()) {
+            if (Node* result = findByName(*child, name))
+                return result;
+        }
+        return nullptr;
+    }
+
     std::unique_ptr<Node> m_root;
 };

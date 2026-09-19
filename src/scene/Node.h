@@ -27,6 +27,7 @@ public:
     }
 
     const std::string& getName() const { return m_name; }
+    void setName(const std::string& name) { m_name = name; }
     void setPosition(glm::vec3 pos) { m_position = pos; }
     glm::vec3 getPosition() const { return m_position; }
     void setRotation(const glm::quat& rotation) { m_rotation = rotation; }

@@ -124,7 +124,7 @@ void PhysicsBody::endEditorManipulation() {
 
 void PhysicsBody::appendDebugLines(std::vector<PhysicsDebugLine>& lines) const {
 #ifdef CHISEL_ENABLE_JOLT
-    if (m_bodyID.IsInvalid())
+    if (m_bodyID.IsInvalid() || m_shape == nullptr)
         return;
     JPH::RVec3 position;
     JPH::Quat rotation;
@@ -134,17 +134,20 @@ void PhysicsBody::appendDebugLines(std::vector<PhysicsDebugLine>& lines) const {
     const glm::vec3 center(static_cast<float>(position.GetX()),
                            static_cast<float>(position.GetY()),
                            static_cast<float>(position.GetZ()));
-    const glm::vec3 half = glm::max(m_size, glm::vec3(0.01f)) * 0.5f;
-    const std::array<glm::vec3, 8> corners = {
-        glm::vec3(-half.x, -half.y, -half.z), glm::vec3(half.x, -half.y, -half.z),
-        glm::vec3(half.x, half.y, -half.z), glm::vec3(-half.x, half.y, -half.z),
-        glm::vec3(-half.x, -half.y, half.z), glm::vec3(half.x, -half.y, half.z),
-        glm::vec3(half.x, half.y, half.z), glm::vec3(-half.x, half.y, half.z)};
-    constexpr int edges[][2] = {
-        {0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6},
-        {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
-    for (const auto& edge : edges)
-        lines.push_back({center + q * corners[edge[0]], center + q * corners[edge[1]]});
+    if (const auto* hull = dynamic_cast<const JPH::ConvexHullShape*>(m_shape.GetPtr())) {
+        for (uint32_t faceIndex = 0; faceIndex < hull->GetNumFaces(); ++faceIndex) {
+            const uint32_t count = hull->GetNumVerticesInFace(faceIndex);
+            std::vector<uint32_t> face(count);
+            hull->GetFaceVertices(faceIndex, count, face.data());
+            for (uint32_t i = 0; i < count; ++i) {
+                const JPH::Vec3 a = hull->GetPoint(face[i]);
+                const JPH::Vec3 b = hull->GetPoint(face[(i + 1) % count]);
+                const glm::vec3 from = center + q * glm::vec3(a.GetX(), a.GetY(), a.GetZ());
+                const glm::vec3 to = center + q * glm::vec3(b.GetX(), b.GetY(), b.GetZ());
+                lines.push_back({from, to});
+            }
+        }
+    }
 #else
     (void)lines;
 #endif
@@ -257,6 +260,7 @@ PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
             return nullptr;
         }
         result->m_bodyID = bodyID;
+        result->m_shape = shape.Get();
         m_bodies.push_back(std::move(body));
         return result;
     }
@@ -285,6 +289,7 @@ PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
         return nullptr;
     }
     result->m_bodyID = bodyID;
+    result->m_shape = shape.Get();
 #else
     (void)friction;
     (void)restitution;

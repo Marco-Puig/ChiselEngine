@@ -26,7 +26,7 @@ VR development is traditionally slow because of the "Headset Cycle" (Put on head
 | Module | Responsibility | Key Components |
 | :--- | :--- | :--- |
 | **Core** | The main part of the engine. Handles initialization, the main loop, and shutdown. | `engine.cpp`, `Game` class |
-| **Platform** | Interfaces with the OS and Windowing system. | `Window`, `DevUI`, `PhysicsSystem` |
+| **Platform** | Interfaces with the OS and Windowing system. | `Window`, `SceneEditor`, `PhysicsSystem` |
 | **XR** | Manages the VR Headset, controllers, and OpenXR session. | `XRManager`, `Swapchains` |
 | **Rendering**| The OpenGL pipeline. Handles shaders, buffers, and lighting. | `RenderSystem`, `Light`, `GLBLoader` |
 | **Scene** | High-level object management and animation. | `Node`, `MeshNode`, `Animator` |
@@ -93,7 +93,7 @@ body->setMass(5.0f);
 maps are supported by the default OpenGL shader; models without a material
 continue to use the neutral fallback color.
 
-Select a node in the DevUI to use the Move or Rotate gizmo. ImGuizmo performs
+Select a node in the Scene Editor to use the Move or Rotate gizmo. ImGuizmo performs
 the screen-ray/handle hit test and updates the node while dragging. While a
 handle is hovered or active, `ArcRotateCamera` gives the mouse to the gizmo
 instead of orbiting or panning.
@@ -137,8 +137,24 @@ floor should eventually use a Jolt triangle-mesh shape instead.
    cmake -B build "-DCMAKE_POLICY_VERSION_MINIMUM=3.6"
    cmake --build build
    ```
-2. **Configure**: Open the `DevUI` window and toggle **Simulated VR** to test without a headset. OpenXR support is enabled by default; use `-DCHISEL_ENABLE_OPENXR=OFF` for a desktop-only build.
-3. **Create**: Open `Game/Game.cpp` and start building your world!
+2. **Configure**: Open the `Scene Editor` window and toggle **Simulated VR** to test without a headset. OpenXR support is enabled by default; use `-DCHISEL_ENABLE_OPENXR=OFF` for a desktop-only build.
+
+## Lua gameplay scripts
+
+Gameplay scripts use Lua 5.4 with LuaBridge. The single entry script returns a
+table with optional `onStart(scene, animator)` and
+`onUpdate(deltaTime, scene, animator)`
+functions. The first pass exposes node names, position/scale accessors, scene
+name lookup, and the native `Animator` procedural API. Script code does not own
+scene nodes; native C++ retains ownership and controls their lifetime.
+
+The single `Game/game.lua` entry point registers a continuous rotation through
+the native animator. Lua load, syntax, and callback errors are written to the
+`[Lua]` log channel and do not terminate the process. Input, physics, rendering,
+and arbitrary object ownership remain native until stable script-facing APIs are
+defined.
+3. **Create**: Edit `Game/game.lua` to implement gameplay behavior without
+changing the native game loop.
 
 When an OpenXR runtime and headset are available, the engine creates an OpenGL OpenXR session,
 locates both eye views, renders each eye into its swapchain, and submits a projection layer.

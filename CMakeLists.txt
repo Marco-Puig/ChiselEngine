@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 option(CHISEL_ENABLE_OPENXR "Build OpenXR headset support" ON)
 option(CHISEL_ENABLE_JOLT "Build Jolt Physics support" ON)
+option(CHISEL_ENABLE_LUA "Build Lua scripting support" ON)
 
 include(FetchContent)
 
@@ -88,6 +89,22 @@ FetchContent_Declare(stb
     EXCLUDE_FROM_ALL
 )
 
+if(CHISEL_ENABLE_LUA)
+    FetchContent_Declare(lua
+        URL https://www.lua.org/ftp/lua-5.4.7.tar.gz
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        SYSTEM
+        EXCLUDE_FROM_ALL
+    )
+    FetchContent_Declare(luabridge
+        GIT_REPOSITORY https://github.com/vinniefalco/LuaBridge.git
+        GIT_TAG        2.9
+        GIT_SHALLOW    TRUE
+        SYSTEM
+        EXCLUDE_FROM_ALL
+    )
+endif()
+
 if(CHISEL_ENABLE_OPENXR)
     FetchContent_Declare(openxr
         GIT_REPOSITORY https://github.com/KhronosGroup/OpenXR-SDK-Source.git
@@ -112,6 +129,28 @@ if(CHISEL_ENABLE_JOLT)
 endif()
 
 FetchContent_MakeAvailable(glfw glm glad tinygltf imgui imguizmo stb)
+if(CHISEL_ENABLE_LUA)
+    FetchContent_GetProperties(lua)
+    if(NOT lua_POPULATED)
+        FetchContent_Populate(lua)
+    endif()
+    FetchContent_GetProperties(luabridge)
+    if(NOT luabridge_POPULATED)
+        FetchContent_Populate(luabridge)
+    endif()
+    file(GLOB LUA_SOURCES CONFIGURE_DEPENDS
+        ${lua_SOURCE_DIR}/src/*.c
+    )
+    list(REMOVE_ITEM LUA_SOURCES
+        ${lua_SOURCE_DIR}/src/lua.c
+        ${lua_SOURCE_DIR}/src/luac.c
+    )
+    add_library(lua STATIC ${LUA_SOURCES})
+    target_include_directories(lua PUBLIC ${lua_SOURCE_DIR}/src)
+    if(MSVC)
+        target_compile_definitions(lua PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
+endif()
 if(CHISEL_ENABLE_OPENXR)
     set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(openxr)
@@ -172,6 +211,9 @@ target_include_directories(ChiselEngine PRIVATE
     ${imguizmo_SOURCE_DIR}/src
     ${stb_SOURCE_DIR}
 )
+if(CHISEL_ENABLE_LUA)
+    target_include_directories(ChiselEngine PRIVATE ${luabridge_SOURCE_DIR}/Source)
+endif()
 
 target_compile_definitions(ChiselEngine PRIVATE GLFW_INCLUDE_NONE IMGUI_DEFINE_MATH_OPERATORS)
 if(CHISEL_ENABLE_OPENXR)
@@ -198,6 +240,10 @@ target_link_libraries(ChiselEngine PRIVATE
     OpenGL::GL
     imgui_backend
 )
+if(CHISEL_ENABLE_LUA)
+    target_link_libraries(ChiselEngine PRIVATE lua)
+    target_compile_definitions(ChiselEngine PRIVATE CHISEL_ENABLE_LUA)
+endif()
 target_sources(ChiselEngine PRIVATE ${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp)
 
 if(WIN32)
@@ -225,5 +271,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/resources)
             ${CMAKE_CURRENT_SOURCE_DIR}/resources
             $<TARGET_FILE_DIR:ChiselEngine>/resources
         COMMENT "Copying Resources next to the executable"
+    )
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Game)
+    add_custom_command(TARGET ChiselEngine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            ${CMAKE_CURRENT_SOURCE_DIR}/Game
+            $<TARGET_FILE_DIR:ChiselEngine>/Game
+        COMMENT "Copying Game project next to the executable"
     )
 endif()

@@ -46,6 +46,20 @@ public:
         m_target->setPosition(position);
     }
 
+    void proceduralFromLua(Node* node, const std::string& axis,
+                           const std::string& direction,
+                           const std::string& type, float speed) {
+        Axis selectedAxis = Axis::Y;
+        if (axis == "x") selectedAxis = Axis::X;
+        else if (axis == "z") selectedAxis = Axis::Z;
+
+        const Direction selectedDirection =
+            direction == "negative" ? Direction::Negative : Direction::Positive;
+        const TransformType selectedType =
+            type == "position" ? TransformType::Position : TransformType::Rotation;
+        procedural(node, selectedAxis, selectedDirection, selectedType, speed);
+    }
+
     void playAnimation(const std::string& animName) {
         (void)animName;
     }

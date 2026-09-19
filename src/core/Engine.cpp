@@ -1,6 +1,6 @@
 #include "Engine.h"
 #include "rendering/RenderSystem.h"
-#include "platform/DevUI.h"
+#include "platform/SceneEditor.h"
 #include "xr/XRManager.h"
 #include "platform/PhysicsSystem.h"
 #include "scene/ArcRotateCamera.h"
@@ -12,7 +12,7 @@ void Engine::init() {
     RenderSystem::getInstance().init();
     XRManager::getInstance().init(*m_window);
     PhysicsSystem::getInstance().init();
-    DevUI::getInstance().init(*m_window);
+    SceneEditor::getInstance().init(*m_window);
 }
 
 void Engine::run(IGame* game) {
@@ -32,8 +32,8 @@ void Engine::run(IGame* game) {
         lastTime = currentTime;
 
         m_window->pollEvents();
-        DevUI::getInstance().beginFrame();
-        DevUI::getInstance().updateGizmo(game->getSceneRoot(), game->getCamera());
+        SceneEditor::getInstance().beginFrame();
+        SceneEditor::getInstance().updateGizmo(game->getSceneRoot(), game->getCamera());
         game->update(dt);
         PhysicsSystem::getInstance().update(dt);
         xr.syncActions();
@@ -69,12 +69,12 @@ void Engine::run(IGame* game) {
             RenderSystem::getInstance().render(game->getSceneRoot());
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        DevUI::getInstance().render(*m_window, xr, game->getSceneRoot(),
+        SceneEditor::getInstance().render(*m_window, xr, game->getSceneRoot(),
                                     game->getCamera(), dt);
         m_window->swapBuffers();
     }
 
-    DevUI::getInstance().shutdown();
+    SceneEditor::getInstance().shutdown();
     PhysicsSystem::getInstance().shutdown();
     xr.shutdown();
 }

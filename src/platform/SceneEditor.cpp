@@ -1,4 +1,4 @@
-#include "DevUI.h"
+#include "SceneEditor.h"
 #include "Window.h"
 #include "core/Version.h"
 #include "xr/XRManager.h"
@@ -21,27 +21,29 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <functional>
+#include <fstream>
+#include <stdexcept>
 
 #ifdef _WIN32
 #include <windows.h>
 #include <intrin.h>
 #endif
 
-DevUI& DevUI::getInstance() {
-    static DevUI instance;
+SceneEditor& SceneEditor::getInstance() {
+    static SceneEditor instance;
     return instance;
 }
 
-DevUI::~DevUI() {
+SceneEditor::~SceneEditor() {
     shutdown();
 }
 
-bool DevUI::isGizmoCapturingMouse() {
+bool SceneEditor::isGizmoCapturingMouse() {
     const ImGuiIO& io = ImGui::GetIO();
     return io.WantCaptureMouse || ImGuizmo::IsUsing() || ImGuizmo::IsOver();
 }
 
-void DevUI::init(Window& window) {
+void SceneEditor::init(Window& window) {
     if (m_initialized)
         return;
 
@@ -50,13 +52,29 @@ void DevUI::init(Window& window) {
     // Prevent stale ImGui layout entries from reopening old developer windows.
     ImGui::GetIO().IniFilename = nullptr;
     ImGui::StyleColorsDark();
+    const std::string fontPath = "resources/Roboto-Regular.ttf";
+    ImGuiIO& io = ImGui::GetIO();
+    std::ifstream fontFile(fontPath, std::ios::binary);
+    unsigned char signature[4] = {};
+    if (fontFile.read(reinterpret_cast<char*>(signature), sizeof(signature)) &&
+        ((signature[0] == 0x00 && signature[1] == 0x01 &&
+          signature[2] == 0x00 && signature[3] == 0x00) ||
+         (signature[0] == 't' && signature[1] == 'r' &&
+          signature[2] == 'u' && signature[3] == 'e'))) {
+        ImFont* font = io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 17.0f);
+        if (font == nullptr)
+            throw std::runtime_error("Failed to load Scene Editor font: " + fontPath);
+    } else {
+        std::cerr << "[ImGui] Invalid or missing font '" << fontPath
+                  << "'; using the default font\n";
+    }
     ImGui_ImplGlfw_InitForOpenGL(window.getHandle(), true);
     ImGui_ImplOpenGL3_Init("#version 450 core");
     querySystemInfo();
     m_initialized = true;
 }
 
-void DevUI::shutdown() {
+void SceneEditor::shutdown() {
     if (!m_initialized)
         return;
     ImGui_ImplOpenGL3_Shutdown();
@@ -65,7 +83,7 @@ void DevUI::shutdown() {
     m_initialized = false;
 }
 
-void DevUI::beginFrame() {
+void SceneEditor::beginFrame() {
     if (!m_initialized)
         return;
     ImGui_ImplOpenGL3_NewFrame();
@@ -74,7 +92,7 @@ void DevUI::beginFrame() {
     ImGuizmo::BeginFrame();
 }
 
-void DevUI::updateGizmo(Node* sceneRoot, ArcRotateCamera* camera) {
+void SceneEditor::updateGizmo(Node* sceneRoot, ArcRotateCamera* camera) {
     m_gizmoCapturingMouse = false;
     selectLightAtCursor(sceneRoot, camera);
     Node* previousNode = m_manipulatedNode;
@@ -125,7 +143,7 @@ void DevUI::updateGizmo(Node* sceneRoot, ArcRotateCamera* camera) {
     m_gizmoCapturingMouse = usingGizmo || ImGuizmo::IsOver();
 }
 
-void DevUI::selectLightAtCursor(Node* sceneRoot, ArcRotateCamera* camera) {
+void SceneEditor::selectLightAtCursor(Node* sceneRoot, ArcRotateCamera* camera) {
     if (!m_visible || sceneRoot == nullptr || camera == nullptr)
         return;
     const ImGuiIO& io = ImGui::GetIO();
@@ -179,7 +197,7 @@ void drawNodeList(Node* node, Node*& selected) {
 }
 }
 
-void DevUI::render(Window& window, XRManager& xr, Node* sceneRoot,
+void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
                    ArcRotateCamera* camera, float deltaTime) {
     (void)camera;
     if (!m_initialized)
@@ -214,7 +232,7 @@ void DevUI::render(Window& window, XRManager& xr, Node* sceneRoot,
         ImGui::SetNextWindowSizeConstraints(ImVec2(300.0f, 220.0f),
                                              ImVec2(FLT_MAX, FLT_MAX));
         const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse;
-        if (ImGui::Begin("ChiselEngine", &m_visible, windowFlags)) {
+        if (ImGui::Begin("Scene Editor", &m_visible, windowFlags)) {
             ImGui::Text("Engine version: %s", ChiselEngine::Version);
             ImGui::Separator();
             ImGui::Text("FPS: %.1f", m_fps);
@@ -239,14 +257,14 @@ void DevUI::render(Window& window, XRManager& xr, Node* sceneRoot,
             if (DirectionalLight* light = RenderSystem::getInstance().getDirectionalLight()) {
                 float intensity = light->getIntensity();
                 float exposure = light->getExposure();
-                if (ImGui::SliderFloat("Directional intensity", &intensity, 0.0f, 8.0f, "%.2f"))
+                if (ImGui::SliderFloat("Intensity", &intensity, 0.0f, 8.0f, "%.2f"))
                     light->setIntensity(intensity);
-                if (ImGui::SliderFloat("Directional exposure", &exposure, -4.0f, 4.0f, "%.2f EV"))
+                if (ImGui::SliderFloat("Exposure", &exposure, -4.0f, 4.0f, "%.2f EV"))
                     light->setExposure(exposure);
             }
             ImGui::Separator();
             ImGui::TextUnformatted("Scene nodes");
-            ImGui::BeginChild("DevUI.NodeList", ImVec2(0.0f, 90.0f), true);
+            ImGui::BeginChild("SceneEditor.NodeList", ImVec2(0.0f, 90.0f), true);
             drawNodeList(sceneRoot, m_selectedNode);
             ImGui::EndChild();
             if (ImGui::RadioButton("Move", m_gizmoOperation == 0))
@@ -263,7 +281,7 @@ void DevUI::render(Window& window, XRManager& xr, Node* sceneRoot,
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-void DevUI::querySystemInfo() {
+void SceneEditor::querySystemInfo() {
     const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
     m_gpuName = renderer != nullptr ? renderer : "Unknown GPU";
     m_gpuMemory = "Unavailable";
