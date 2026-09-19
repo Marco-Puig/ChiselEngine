@@ -16,6 +16,12 @@ Everything in the world is a `Node`. Whether it's a camera, a light, or a 3D mod
 - **Hierarchical Transforms**: Parent-child relationships for complex objects.
 - **Uniform Interaction**: An `Animator` can drive any `Node`, regardless of what it is.
 
+### Lua-First Game Development
+The engine runtime is native C++, but game-specific scene setup and gameplay
+live in the top-level `game/` project folder. Developers normally edit
+`game/game.lua` rather than changing the engine's `Game` C++ plumbing. This
+keeps the engine reusable while making iteration on a game script fast.
+
 ### VR-First Workflow
 VR development is traditionally slow because of the "Headset Cycle" (Put on headset $\rightarrow$ Test $\rightarrow$ Take off headset $\rightarrow$ Fix code). ChiselEngine breaks this with **VR Simulation Mode**, allowing developers to test movements and logic in a desktop window before deploying to hardware.
 
@@ -33,57 +39,103 @@ VR development is traditionally slow because of the "Headset Cycle" (Put on head
 
 ---
 
-## Developer's Guide: How to make a game
+## Developer's Guide: Build a game in Lua
 
-As a developer, you don't touch the `Core`, `XR`, or `Rendering` modules. You spend 100% of your time in the **`Game`** class and the **`Scene`** module.
+Game developers should normally work in `Game/`, not in `src/game/`. The native
+[`Game`](C:/Users/marco/OneDrive/Documents/ChiselEngine/src/game/Game.cpp)
+class only creates the scene/runtime plumbing, loads `Game/game.lua`, and
+drives its lifecycle. The script is the single game entry point and returns a
+table with these optional callbacks:
 
-### 1. Setup the scene (`start()`)
-In the `start()` method, you set up your environment. You load your models as **Nodes** and define your lighting.
+```lua
+local game = {}
 
-```cpp
-void Game::start() {
-    // Setup a sun light
-    DirectionalLight* sun = new DirectionalLight("Sun", glm::vec3(-0.2f, -1.0f, -0.3f));
-    sun->setColor(glm::vec3(1.0f, 0.9f, 0.8f));
-    RenderSystem::getInstance().addLight(sun);
+function game.onStart(scene, animator)
+    -- Create the initial scene and register gameplay behavior.
+end
 
-    // Load the bundled OpenGL test model as a Node
-    MeshNode* cube = GLBLoader::loadGLB("resources/cube.glb");
-}
+function game.onUpdate(deltaTime, scene, animator)
+    -- Run per-frame gameplay logic.
+end
+
+return game
 ```
 
-### 2. Create an active node (`update()`)
-In the `update()` method, you define how the world changes over time. You can use the `Animator` to create movement.
+### Creating a scene
 
-```cpp
-void Game::update(float deltaTime) {
-    // Make the sword float up and down procedurally
-    swordAnimator->animateAxis("y", 0.2f);
-    
-    // Or trigger a keyframe animation from the GLB file
-    if (input.ButtonPressed(BUTTON_A)) {
-        swordAnimator->playAnimation("Attack_Swing");
-    }
-}
+The first-pass Lua API lets the script create lights and load GLB meshes:
+
+```lua
+local sun = scene:createDirectionalLight("Sun")
+sun:setColor(1.0, 0.9, 0.8)
+sun:setPosition(0.0, 4.0, 0.0)
+sun:setIntensity(1.0)
+sun:setExposure(0.0)
+
+Engine.setSkybox("resources/skybox.jpg")
+
+local floor = scene:loadMesh("resources/plane.glb", "Floor")
+floor:setPosition(0.0, 0.0, 0.0)
+Engine.addRigidBody(floor, "static", 0.8, 0.0)
 ```
+
+`scene:loadMesh(path, name)` loads the asset through the native glTF pipeline,
+attaches the resulting node to the scene root, and returns the node to Lua.
+The available body types are `"static"`, `"dynamic"`, and `"kinematic"`.
+
+### Transform and scene queries
+
+Nodes currently expose:
+
+```lua
+node:getName()
+node:setName("NewName")
+node:setPosition(x, y, z)
+node:getPositionX()
+node:getPositionY()
+node:getPositionZ()
+node:setScale(x, y, z)
+
+local node = scene:findNode("Floor")
+```
+
+Lua does not own scene nodes. The native scene retains ownership and controls
+their lifetime.
 
 ### Procedural animation
 
-`Animator::procedural` registers a continuous transform update in radians or world units per second:
+Register a continuous transform update through the native `Animator`:
 
-```cpp
-animator->procedural(cube, Axis::Y, Direction::Positive,
-                     TransformType::Rotation, glm::radians(45.0f));
+```lua
+animator:procedural(
+    frog,
+    "y",
+    "positive",
+    "rotation",
+    1.0
+)
 ```
 
-The sample game uses this API to rotate the bundled cube every frame.
+The axis may be `"x"`, `"y"`, or `"z"`. The direction may be `"positive"` or
+`"negative"`, the type may be `"rotation"` or `"position"`, and the speed is
+expressed in radians or world units per second.
 
-### Physics Interaction
-To make an object physical, simply wrap the node in a `PhysicsBody`.
+### Demo project
 
-```cpp
-PhysicsBody* body = PhysicsSystem::getInstance().createRigidBody(rockNode, BodyType::Dynamic);
-body->setMass(5.0f);
+The checked-in [`Game/game.lua`](C:/Users/marco/OneDrive/Documents/ChiselEngine/Game/game.lua)
+creates the demo light, skybox, floor, frog mesh, physics bodies, and frog
+rotation entirely from Lua:
+
+```lua
+function game.onStart(scene, animator)
+    local floor = scene:loadMesh("resources/plane.glb", "Floor")
+    Engine.addRigidBody(floor, "static", 0.8, 0.0)
+
+    local frog = scene:loadMesh("resources/frog.glb", "Frog")
+    frog:setPosition(0.0, 3.0, 0.0)
+    Engine.addRigidBody(frog, "dynamic", 0.6, 0.1)
+    animator:procedural(frog, "y", "positive", "rotation", 1.0)
+end
 ```
 
 ### Materials, gizmos, and desktop VR input
@@ -129,7 +181,7 @@ floor should eventually use a Jolt triangle-mesh shape instead.
    build.bat
    run.bat
    ```
-   `build.bat` configures and builds the engine. `run.bat` launches the built executable (defaults to Debug; pass `Release` for a release build, e.g. `run.bat Release`). The default game loads and renders `resources/cube.glb`.
+   `build.bat` configures and builds the engine. `run.bat` launches the built executable (defaults to Debug; pass `Release` for a release build, e.g. `run.bat Release`). The default project loads `Game/game.lua`, which defines the demo scene.
 
    **Option B - run the commands yourself:**
    ```powershell
@@ -137,7 +189,7 @@ floor should eventually use a Jolt triangle-mesh shape instead.
    cmake -B build "-DCMAKE_POLICY_VERSION_MINIMUM=3.6"
    cmake --build build
    ```
-2. **Configure**: Open the `Scene Editor` window and toggle **Simulated VR** to test without a headset. OpenXR support is enabled by default; use `-DCHISEL_ENABLE_OPENXR=OFF` for a desktop-only build.
+2. **Run and iterate**: Open the `Scene Editor` window and toggle **Simulated VR** to test without a headset. Edit `Game/game.lua`, rebuild, and run again. OpenXR support is enabled by default; use `-DCHISEL_ENABLE_OPENXR=OFF` for a desktop-only build.
 
 ## Lua gameplay scripts
 
@@ -148,13 +200,11 @@ functions. The first pass exposes node names, position/scale accessors, scene
 name lookup, and the native `Animator` procedural API. Script code does not own
 scene nodes; native C++ retains ownership and controls their lifetime.
 
-The single `Game/game.lua` entry point registers a continuous rotation through
-the native animator. Lua load, syntax, and callback errors are written to the
-`[Lua]` log channel and do not terminate the process. Input, physics, rendering,
-and arbitrary object ownership remain native until stable script-facing APIs are
-defined.
-3. **Create**: Edit `Game/game.lua` to implement gameplay behavior without
-changing the native game loop.
+Lua load, syntax, and callback errors are written to the `[Lua]` log channel.
+The current API intentionally focuses on scene construction, transforms,
+animation, lights, skyboxes, and basic rigid-body creation. Input, OpenXR
+actions, rendering internals, and arbitrary object ownership remain native
+until stable script-facing APIs are defined.
 
 When an OpenXR runtime and headset are available, the engine creates an OpenGL OpenXR session,
 locates both eye views, renders each eye into its swapchain, and submits a projection layer.
