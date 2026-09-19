@@ -59,7 +59,8 @@ DirectionalLight* createDirectionalLight(Scene* scene,
 }
 
 bool addRigidBody(Node* node, const std::string& type,
-                  float friction, float restitution) {
+                   const std::string& collider,
+                   float friction, float restitution) {
     if (node == nullptr)
         return false;
     auto* mesh = dynamic_cast<MeshNode*>(node);
@@ -70,10 +71,16 @@ bool addRigidBody(Node* node, const std::string& type,
         bodyType = BodyType::Dynamic;
     else if (type == "kinematic")
         bodyType = BodyType::Kinematic;
+    
+    ColliderType colliderType = ColliderType::Box;
+    if (collider == "convex")
+        colliderType = ColliderType::Convex;
+        
     return PhysicsSystem::getInstance().createRigidBody(
         node, bodyType, glm::max(mesh->getBoundsSize(), glm::vec3(0.01f)),
-        friction, restitution) != nullptr;
+        colliderType, friction, restitution) != nullptr;
 }
+
 
 void setSkybox(const std::string& path) {
     RenderSystem::getInstance().setSkyboxPath(path);

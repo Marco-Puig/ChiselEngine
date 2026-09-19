@@ -16,6 +16,7 @@
 namespace {
 struct SceneMeshInstance {
     int mesh = -1;
+    int nodeIndex = -1;
     glm::mat4 transform{1.0f};
 };
 
@@ -54,8 +55,8 @@ glm::mat4 nodeTransform(const tinygltf::Node& node) {
 }
 
 void collectSceneMeshInstances(const tinygltf::Model& model, int nodeIndex,
-                               const glm::mat4& parentTransform,
-                               std::vector<SceneMeshInstance>& instances) {
+                                const glm::mat4& parentTransform,
+                                std::vector<SceneMeshInstance>& instances) {
     if (nodeIndex < 0 || nodeIndex >= static_cast<int>(model.nodes.size())) {
         std::cerr << "GLB scene references invalid node index " << nodeIndex << '\n';
         return;
@@ -63,7 +64,7 @@ void collectSceneMeshInstances(const tinygltf::Model& model, int nodeIndex,
     const tinygltf::Node& node = model.nodes[nodeIndex];
     const glm::mat4 worldTransform = parentTransform * nodeTransform(node);
     if (node.mesh >= 0)
-        instances.push_back({node.mesh, worldTransform});
+        instances.push_back({node.mesh, nodeIndex, worldTransform});
     for (int child : node.children)
         collectSceneMeshInstances(model, child, worldTransform, instances);
 }
@@ -240,7 +241,7 @@ Node* GLBLoader::loadGLB(const std::string& path) {
     collectDefaultSceneMeshInstances(model, sceneInstances);
     if (sceneInstances.empty()) {
         for (size_t i = 0; i < model.meshes.size(); ++i)
-            sceneInstances.push_back({static_cast<int>(i), glm::mat4(1.0f)});
+            sceneInstances.push_back({static_cast<int>(i), static_cast<int>(i), glm::mat4(1.0f)});
         std::cerr << "GLB has no mesh nodes in its default scene; checking all meshes\n";
     }
 
@@ -396,6 +397,16 @@ Node* GLBLoader::loadGLB(const std::string& path) {
         glBindVertexArray(0);
 
         auto* meshNode = new MeshNode("GLB_Mesh:" + path);
+        
+        if (instance.nodeIndex >= 0 && instance.nodeIndex < static_cast<int>(model.nodes.size())) {
+            const std::string& nodeName = model.nodes[instance.nodeIndex].name;
+            if (!nodeName.empty()) {
+                meshNode->setName(nodeName);
+            } else {
+                meshNode->setName("node_" + std::to_string(instance.nodeIndex));
+            }
+        }
+        
         meshNode->setMesh(vao, vbo, ebo, static_cast<int>(indices.size()), true);
         meshNode->setBounds(boundsMin, boundsMax);
         meshNode->setPosition(pos);

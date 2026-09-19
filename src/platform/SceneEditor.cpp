@@ -189,15 +189,28 @@ void SceneEditor::selectLightAtCursor(Node* sceneRoot, ArcRotateCamera* camera) 
 }
 
 namespace {
-void drawNodeList(Node* node, Node*& selected, const Animator* animator) {
+void drawNodeList(Node* node, Node*& selected, const Animator* animator, bool forceOpen = false) {
     if (node == nullptr)
         return;
     const bool isSelected = selected == node;
     const std::vector<std::string> animations =
         animator != nullptr ? animator->getAnimationLabels(node) :
                               std::vector<std::string>();
-    if (ImGui::Selectable(node->getName().c_str(), isSelected))
+    
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanFullWidth;
+    if (node->getChildren().empty())
+        flags |= ImGuiTreeNodeFlags_Leaf;
+    if (isSelected)
+        flags |= ImGuiTreeNodeFlags_Selected;
+
+    ImGui::PushID(node);
+    if (forceOpen) {
+        ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+    }
+    bool open = ImGui::TreeNodeEx(node->getName().c_str(), flags);
+    if (ImGui::IsItemClicked())
         selected = node;
+
     if (!animations.empty()) {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "[ANIM]");
@@ -209,8 +222,13 @@ void drawNodeList(Node* node, Node*& selected, const Animator* animator) {
             ImGui::EndTooltip();
         }
     }
-    for (const auto& child : node->getChildren())
-        drawNodeList(child.get(), selected, animator);
+
+    if (open) {
+        for (const auto& child : node->getChildren())
+            drawNodeList(child.get(), selected, animator, false);
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
 }
 }
 
@@ -246,11 +264,13 @@ void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
     m_toggleKeyWasDown = f1Down;
 
     if (m_visible) {
-        ImGui::SetNextWindowSize(ImVec2(390.0f, 280.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(340.0f, 550.0f), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2(300.0f, 220.0f),
                                              ImVec2(FLT_MAX, FLT_MAX));
         const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse;
         if (ImGui::Begin("Scene Editor", &m_visible, windowFlags)) {
+            ImGui::Text("Press F1 to toggle this window");
+            ImGui::Separator();
             ImGui::Text("Engine version: %s", ChiselEngine::Version);
             ImGui::Separator();
             ImGui::Text("FPS: %.1f", m_fps);
@@ -274,11 +294,6 @@ void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
                 PhysicsSystem::getInstance().setDebugDrawEnabled(m_showCollisionDebug);
             if (ImGui::Checkbox("V-Sync", &m_vsync))
                 window.setVSync(m_vsync);
-            if (ImGui::Checkbox("Show Meshes", &m_showMeshes) && m_showMeshes) {
-                if (sceneRoot == nullptr) {
-                    std::cerr << "[Scene Editor] Cannot show meshes: scene root is null\n";
-                }
-            }
             if (DirectionalLight* light = RenderSystem::getInstance().getDirectionalLight()) {
                 float intensity = light->getIntensity();
                 float exposure = light->getExposure();
@@ -288,36 +303,15 @@ void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
                     light->setExposure(exposure);
             }
             ImGui::Separator();
-            ImGui::TextUnformatted("Scene nodes");
-            ImGui::BeginChild("SceneEditor.NodeList", ImVec2(0.0f, 90.0f), true);
-            drawNodeList(sceneRoot, m_selectedNode, animator);
-            ImGui::EndChild();
-            if (m_showMeshes) {
-                ImGui::Separator();
-                ImGui::TextUnformatted("Meshes");
-                ImGui::BeginChild("SceneEditor.MeshList", ImVec2(0.0f, 90.0f), true);
-                std::function<void(Node*)> drawMeshes = [&](Node* node) {
-                    if (node == nullptr)
-                        return;
-                    if (dynamic_cast<MeshNode*>(node) != nullptr)
-                        ImGui::BulletText("%s", node->getName().c_str());
-                    for (const auto& child : node->getChildren()) {
-                        if (child != nullptr)
-                            drawMeshes(child.get());
-                    }
-                };
-                if (sceneRoot != nullptr)
-                    drawMeshes(sceneRoot);
-                else
-                    ImGui::TextUnformatted("No scene loaded");
-                ImGui::EndChild();
-            }
             if (ImGui::RadioButton("Move", m_gizmoOperation == 0))
                 m_gizmoOperation = 0;
             ImGui::SameLine();
             if (ImGui::RadioButton("Rotate", m_gizmoOperation == 1))
                 m_gizmoOperation = 1;
-            ImGui::Text("Press F1 to toggle this window");
+            ImGui::TextUnformatted("Scene nodes");
+            ImGui::BeginChild("SceneEditor.NodeList", ImVec2(0.0f, 0.0f), true);
+            drawNodeList(sceneRoot, m_selectedNode, animator, true);
+            ImGui::EndChild();
         }
         ImGui::End();
     }

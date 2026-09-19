@@ -14,6 +14,7 @@
 #endif
 
 enum class BodyType { Static, Dynamic, Kinematic };
+enum class ColliderType { Box, Convex };
 
 struct PhysicsDebugLine {
     glm::vec3 from;
@@ -52,9 +53,11 @@ public:
     void init();
     void shutdown();
     PhysicsBody* createRigidBody(Node* node, BodyType type,
-                                 const glm::vec3& size,
-                                 float friction = 0.5f,
-                                 float restitution = 0.1f);
+                                   const glm::vec3& size,
+                                   ColliderType colliderType = ColliderType::Box,
+                                   float friction = 0.5f,
+                                   float restitution = 0.1f);
+
     void update(float renderDeltaTime);
     void syncAnimationDrivenNodes();
     void setDebugDrawEnabled(bool enabled) { m_debugDrawEnabled = enabled; }

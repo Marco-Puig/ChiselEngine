@@ -44,7 +44,7 @@ void Engine::init() {
 #ifdef _WIN32
     SetUnhandledExceptionFilter(engineUnhandledException);
 #endif
-    m_window = std::make_unique<Window>(1280, 720, "ChiselEngine");
+    m_window = std::make_unique<Window>(1600, 900, "ChiselEngine");
     RenderSystem::getInstance().init();
     XRManager::getInstance().init(*m_window);
     PhysicsSystem::getInstance().init();

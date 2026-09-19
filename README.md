@@ -76,12 +76,12 @@ Engine.setSkybox("resources/skybox.jpg")
 
 local floor = scene:loadMesh("resources/plane.glb", "Floor")
 floor:setPosition(0.0, 0.0, 0.0)
-Engine.addRigidBody(floor, "static", 0.8, 0.0)
+Engine.addRigidBody(floor, "static", "box", 0.8, 0.0)
 ```
 
 `scene:loadMesh(path, name)` loads the asset through the native glTF pipeline,
 attaches the resulting node to the scene root, and returns the node to Lua.
-The available body types are `"static"`, `"dynamic"`, and `"kinematic"`.
+The available body types are `"static"`, `"dynamic"`, and `"kinematic"`. The available collider types are `"box"` and `"convex"`.
 
 ### Transform and scene queries
 
@@ -129,11 +129,11 @@ rotation entirely from Lua:
 ```lua
 function game.onStart(scene, animator)
     local floor = scene:loadMesh("resources/plane.glb", "Floor")
-    Engine.addRigidBody(floor, "static", 0.8, 0.0)
+    Engine.addRigidBody(floor, "static", "box", 0.8, 0.0)
 
     local frog = scene:loadMesh("resources/frog.glb", "Frog")
     frog:setPosition(0.0, 3.0, 0.0)
-    Engine.addRigidBody(frog, "dynamic", 0.6, 0.1)
+    Engine.addRigidBody(frog, "dynamic", "convex", 0.6, 0.1)
     animator:procedural(frog, "y", "positive", "rotation", 1.0)
 end
 ```

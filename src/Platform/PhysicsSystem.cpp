@@ -370,14 +370,16 @@ void PhysicsSystem::shutdown() {
 }
 
 PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
-                                             const glm::vec3& size,
-                                             float friction, float restitution) {
+                                              const glm::vec3& size,
+                                              ColliderType colliderType,
+                                              float friction, float restitution) {
+
     if (node == nullptr) {
         std::cerr << "[Physics] Cannot create rigid body for a null node\n";
         return nullptr;
     }
     if (!m_initialized)
-        init();
+        PhysicsSystem::getInstance().init();
     auto body = std::make_unique<PhysicsBody>(node, type, size);
     PhysicsBody* result = body.get();
 #ifdef CHISEL_ENABLE_JOLT
@@ -399,7 +401,7 @@ PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
                 hullPoints.emplace_back(point.x, point.y, point.z);
         }
     }
-    if (hullPoints.size() < 4) {
+    if (colliderType == ColliderType::Box || hullPoints.size() < 4) {
         const glm::vec3 safeSize = glm::max(size, glm::vec3(0.01f));
         JPH::BoxShapeSettings shapeSettings(
             JPH::Vec3(safeSize.x * 0.5f, safeSize.y * 0.5f, safeSize.z * 0.5f),

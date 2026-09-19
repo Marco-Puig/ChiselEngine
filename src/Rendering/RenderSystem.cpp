@@ -3,6 +3,7 @@
 #include "Platform/PhysicsSystem.h"
 #include "scene/ArcRotateCamera.h"
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <stb_image.h>
 #include <fstream>
@@ -57,7 +58,10 @@ void RenderSystem::render(Node* rootNode) {
     const glm::mat4 proj = m_desktopCamera != nullptr
         ? m_desktopCamera->getProjectionMatrix()
         : glm::perspective(glm::radians(45.0f), 16.0f / 9.0f, 0.1f, 100.0f);
-    renderView(rootNode, view, proj, 0, 1280, 720);
+    
+    int width, height;
+    glfwGetFramebufferSize(glfwGetCurrentContext(), &width, &height);
+    renderView(rootNode, view, proj, 0, width, height);
 }
 
 void RenderSystem::renderView(Node* rootNode, const glm::mat4& view,
