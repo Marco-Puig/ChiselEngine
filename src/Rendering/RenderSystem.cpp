@@ -10,6 +10,82 @@
 #include <stdexcept>
 #include <iostream>
 #include <limits>
+#include <cmath>
+
+namespace {
+struct Plane {
+    glm::vec3 normal{0.0f, 1.0f, 0.0f};
+    float distance = 0.0f;
+
+    float signedDistance(const glm::vec3& point) const {
+        return glm::dot(normal, point) + distance;
+    }
+};
+
+struct Frustum {
+    Plane planes[6];
+
+    static Frustum fromMatrix(const glm::mat4& m) {
+        Frustum frustum;
+        frustum.planes[0].normal = glm::vec3(m[0][3] + m[0][0], m[1][3] + m[1][0], m[2][3] + m[2][0]);
+        frustum.planes[0].distance = m[3][3] + m[3][0];
+        frustum.planes[1].normal = glm::vec3(m[0][3] - m[0][0], m[1][3] - m[1][0], m[2][3] - m[2][0]);
+        frustum.planes[1].distance = m[3][3] - m[3][0];
+        frustum.planes[2].normal = glm::vec3(m[0][3] + m[0][1], m[1][3] + m[1][1], m[2][3] + m[2][1]);
+        frustum.planes[2].distance = m[3][3] + m[3][1];
+        frustum.planes[3].normal = glm::vec3(m[0][3] - m[0][1], m[1][3] - m[1][1], m[2][3] - m[2][1]);
+        frustum.planes[3].distance = m[3][3] - m[3][1];
+        frustum.planes[4].normal = glm::vec3(m[0][3] + m[0][2], m[1][3] + m[1][2], m[2][3] + m[2][2]);
+        frustum.planes[4].distance = m[3][3] + m[3][2];
+        frustum.planes[5].normal = glm::vec3(m[0][3] - m[0][2], m[1][3] - m[1][2], m[2][3] - m[2][2]);
+        frustum.planes[5].distance = m[3][3] - m[3][2];
+
+        for (auto& plane : frustum.planes) {
+            float length = glm::length(plane.normal);
+            if (length > 0.0f) {
+                plane.normal /= length;
+                plane.distance /= length;
+            }
+        }
+        return frustum;
+    }
+
+    bool isBoxVisible(const glm::vec3& minBounds, const glm::vec3& maxBounds, const glm::mat4& worldTransform) const {
+        glm::vec3 corners[8] = {
+            {minBounds.x, minBounds.y, minBounds.z},
+            {maxBounds.x, minBounds.y, minBounds.z},
+            {minBounds.x, maxBounds.y, minBounds.z},
+            {maxBounds.x, maxBounds.y, minBounds.z},
+            {minBounds.x, minBounds.y, maxBounds.z},
+            {maxBounds.x, minBounds.y, maxBounds.z},
+            {minBounds.x, maxBounds.y, maxBounds.z},
+            {maxBounds.x, maxBounds.y, maxBounds.z}
+        };
+
+        glm::vec3 worldMin(std::numeric_limits<float>::max());
+        glm::vec3 worldMax(std::numeric_limits<float>::lowest());
+
+        for (const auto& corner : corners) {
+            glm::vec3 transformed = glm::vec3(worldTransform * glm::vec4(corner, 1.0f));
+            worldMin = glm::min(worldMin, transformed);
+            worldMax = glm::max(worldMax, transformed);
+        }
+
+        glm::vec3 center = (worldMin + worldMax) * 0.5f;
+        glm::vec3 extents = (worldMax - worldMin) * 0.5f;
+
+        for (int i = 0; i < 6; ++i) {
+            float r = extents.x * std::abs(planes[i].normal.x) +
+                      extents.y * std::abs(planes[i].normal.y) +
+                      extents.z * std::abs(planes[i].normal.z);
+            if (planes[i].signedDistance(center) < -r) {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+}
 
 DirectionalLight* RenderSystem::getDirectionalLight() const {
     for (Light* light : m_lights)
@@ -194,7 +270,6 @@ void RenderSystem::renderShadowMap(Node* rootNode, DirectionalLight* light) {
         return;
     }
 
-    // Tighter bounds = higher pixel density on your objects
     glm::mat4 lightProjection = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 1.0f, 50.0f);
     glm::mat4 lightView = glm::lookAt(
         glm::vec3(0.0f) - light->getDirection() * 20.0f,
@@ -216,8 +291,8 @@ void RenderSystem::renderShadowMap(Node* rootNode, DirectionalLight* light) {
 }
 
 void RenderSystem::renderView(Node* rootNode, const glm::mat4& view,
-                             const glm::mat4& proj, unsigned int framebuffer,
-                             int width, int height) {
+                           const glm::mat4& proj, unsigned int framebuffer,
+                           int width, int height) {
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glViewport(0, 0, width, height);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -244,7 +319,6 @@ void RenderSystem::renderView(Node* rootNode, const glm::mat4& view,
             lightRadius = directional->getRadius();
             lightType = 0;
             
-            // MUST match renderShadowMap exactly, otherwise shadows won't align
             glm::mat4 lightProjection = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 1.0f, 50.0f);
             glm::mat4 lightView = glm::lookAt(
                 glm::vec3(0.0f) - lightDirection * 20.0f,
@@ -378,6 +452,8 @@ void RenderSystem::traverseAndRender(Node* node, const glm::mat4& view, const gl
         if (isShadowPass) {
             if (m_shadowShader == nullptr)
                 return;
+            
+            // Optional: apply frustum culling or light-frustum culling here for shadows too if desired
             m_shadowShader->use();
             m_shadowShader->setMat4("uModel", worldTransform);
             m_shadowShader->setMat4("uLightSpaceMatrix", lightSpaceMatrix);
@@ -387,9 +463,15 @@ void RenderSystem::traverseAndRender(Node* node, const glm::mat4& view, const gl
             glBindVertexArray(0);
         } else {
             if (frustumCullingEnabled) {
-                // Simplified frustum check: only render if center is roughly in view
-                // Real frustum culling would be implemented here
+                Frustum camFrustum = Frustum::fromMatrix(proj * view);
+                if (!camFrustum.isBoxVisible(meshNode->getBoundsMin(), meshNode->getBoundsMax(), worldTransform)) {
+                    // Skip rendering this mesh node if its bounding box is outside the camera frustum
+                    for (const auto& child : node->getChildren())
+                        traverseAndRender(child.get(), view, proj, isShadowPass, lightSpaceMatrix);
+                    return;
+                }
             }
+
             m_shader->use();
             m_shader->setMat4("uModel", worldTransform);
             const Material& material = meshNode->getMaterial();
