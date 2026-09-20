@@ -23,8 +23,66 @@ void RenderSystem::init() {
     glEnable(GL_CULL_FACE);
     glClearColor(0.08f, 0.1f, 0.14f, 1.0f);
     m_shader = std::make_unique<Shader>(
-        "#version 450 core\nlayout(location=0) in vec3 aPosition;\nlayout(location=1) in vec3 aNormal;\nlayout(location=2) in vec2 aTexCoord;\nuniform mat4 uModel; uniform mat4 uView; uniform mat4 uProjection;\nout vec3 vNormal; out vec3 vWorldPosition; out vec2 vTexCoord;\nvoid main(){vec4 world=uModel*vec4(aPosition,1.0); vWorldPosition=world.xyz; vNormal=mat3(transpose(inverse(uModel)))*aNormal; vTexCoord=aTexCoord; gl_Position=uProjection*uView*world;}",
-        "#version 450 core\nin vec3 vNormal; in vec3 vWorldPosition; in vec2 vTexCoord;\nuniform vec3 uLightDirection; uniform vec3 uLightColor; uniform vec3 uCameraPosition; uniform float uLightIntensity; uniform float uLightExposure;\nuniform vec4 uBaseColorFactor; uniform float uMetallicFactor; uniform float uRoughnessFactor;\nuniform bool uHasBaseColorTexture; uniform sampler2D uBaseColorTexture; uniform sampler2D uMetallicRoughnessTexture; uniform sampler2D uNormalTexture; uniform sampler2D uEmissiveTexture;\nuniform bool uHasMetallicRoughnessTexture; uniform bool uHasNormalTexture; uniform bool uHasEmissiveTexture; out vec4 FragColor;\nvoid main(){vec4 base=uBaseColorFactor; if(uHasBaseColorTexture) base*=texture(uBaseColorTexture,vTexCoord); vec3 n=normalize(vNormal); if(uHasNormalTexture){vec3 dp1=dFdx(vWorldPosition); vec3 dp2=dFdy(vWorldPosition); vec2 duv1=dFdx(vTexCoord); vec2 duv2=dFdy(vTexCoord); vec3 t=normalize(dp1*duv2.y-dp2*duv1.y); vec3 b=normalize(cross(n,t)); n=normalize(mat3(t,b,n)*(texture(uNormalTexture,vTexCoord).xyz*2.0-1.0));} vec3 l=normalize(-uLightDirection); vec3 v=normalize(uCameraPosition-vWorldPosition); vec3 h=normalize(l+v); float metallic=uMetallicFactor; float rough=uRoughnessFactor; if(uHasMetallicRoughnessTexture){vec4 mr=texture(uMetallicRoughnessTexture,vTexCoord); rough*=mr.g; metallic*=mr.b;} float diffuse=max(dot(n,l),0.0); rough=max(rough,0.04); float specular=pow(max(dot(n,h),0.0),mix(128.0,4.0,rough))*mix(0.04,0.96,metallic); vec3 lighting=(base.rgb*(0.08+diffuse*uLightColor)+specular*uLightColor)*uLightIntensity; vec3 color=vec3(1.0)-exp(-lighting*exp2(uLightExposure)); if(uHasEmissiveTexture) color+=texture(uEmissiveTexture,vTexCoord).rgb; FragColor=vec4(color,base.a);}");
+        "#version 450 core\n"
+        "layout(location=0) in vec3 aPosition;\n"
+        "layout(location=1) in vec3 aNormal;\n"
+        "layout(location=2) in vec2 aTexCoord;\n"
+        "uniform mat4 uModel; uniform mat4 uView; uniform mat4 uProjection;\n"
+        "out vec3 vNormal; out vec3 vWorldPosition; out vec2 vTexCoord;\n"
+        "void main(){\n"
+        "    vec4 world=uModel*vec4(aPosition,1.0);\n"
+        "    vWorldPosition=world.xyz;\n"
+        "    vNormal=mat3(transpose(inverse(uModel)))*aNormal;\n"
+        "    vTexCoord=aTexCoord;\n"
+        "    gl_Position=uProjection*uView*world;\n"
+        "}",
+        "#version 450 core\n"
+        "in vec3 vNormal; in vec3 vWorldPosition; in vec2 vTexCoord;\n"
+        "uniform vec3 uLightPosition; uniform vec3 uLightDirection; uniform vec3 uLightColor; uniform vec3 uCameraPosition; uniform float uLightIntensity; uniform float uLightExposure;\n"
+        "uniform int uLightType; // 0 = Directional, 1 = Point\n"
+        "uniform float uLightRadius;\n"
+        "uniform vec4 uBaseColorFactor; uniform float uMetallicFactor; uniform float uRoughnessFactor;\n"
+        "uniform bool uHasBaseColorTexture; uniform sampler2D uBaseColorTexture; uniform sampler2D uMetallicRoughnessTexture; uniform sampler2D uNormalTexture; uniform sampler2D uEmissiveTexture;\n"
+        "uniform bool uHasMetallicRoughnessTexture; uniform bool uHasNormalTexture; uniform bool uHasEmissiveTexture; out vec4 FragColor;\n"
+        "void main(){\n"
+        "    vec4 base=uBaseColorFactor;\n"
+        "    if(uHasBaseColorTexture) base*=texture(uBaseColorTexture,vTexCoord);\n"
+        "    vec3 n=normalize(vNormal);\n"
+        "    if(uHasNormalTexture){\n"
+        "        vec3 dp1=dFdx(vWorldPosition); vec3 dp2=dFdy(vWorldPosition);\n"
+        "        vec2 duv1=dFdx(vTexCoord); vec2 duv2=dFdy(vTexCoord);\n"
+        "        vec3 t=normalize(dp1*duv2.y-dp2*duv1.y);\n"
+        "        vec3 b=normalize(cross(n,t));\n"
+        "        n=normalize(mat3(t,b,n)*(texture(uNormalTexture,vTexCoord).xyz*2.0-1.0));\n"
+        "    }\n"
+        "    vec3 l;\n"
+        "    float attenuation = 1.0;\n"
+        "    if(uLightType == 0) { l = normalize(-uLightDirection); }\n"
+        "    else {\n"
+        "        l = normalize(uLightPosition - vWorldPosition);\n"
+        "        float dist = length(uLightPosition - vWorldPosition);\n"
+        "        attenuation = clamp(1.0 - (dist / uLightRadius), 0.0, 1.0);\n"
+        "    }\n"
+        "    vec3 v=normalize(uCameraPosition-vWorldPosition);\n"
+        "    vec3 h=normalize(l+v);\n"
+        "    float metallic=uMetallicFactor;\n"
+        "    float rough=uRoughnessFactor;\n"
+        "    if(uHasMetallicRoughnessTexture){\n"
+        "        vec4 mr=texture(uMetallicRoughnessTexture,vTexCoord);\n"
+        "        rough*=mr.g; metallic*=mr.b;\n"
+        "    }\n"
+        "    float diff = max(dot(n,l), 0.0);\n"
+        "    float spec = pow(max(dot(n,h), 0.0), mix(128.0, 4.0, rough));\n"
+        "    vec3 specColor = mix(vec3(1.0), base.rgb, metallic);\n"
+        "    vec3 ambient = base.rgb * 0.1;\n"
+        "    vec3 diffuse = base.rgb * diff * uLightColor;\n"
+        "    vec3 specular = specColor * spec * uLightColor * mix(0.04, 0.96, metallic);\n"
+        "    vec3 lighting = (ambient + diffuse + specular) * uLightIntensity * attenuation;\n"
+        "    vec3 color=vec3(1.0)-exp(-lighting*exp2(uLightExposure));\n"
+        "    if(uHasEmissiveTexture) color+=texture(uEmissiveTexture,vTexCoord).rgb;\n"
+        "    FragColor=vec4(color,base.a);\n"
+        "}");
+
     m_debugShader = std::make_unique<Shader>(
         "#version 450 core\nlayout(location=0) in vec3 aPosition;\nuniform mat4 uView;\nuniform mat4 uProjection;\nvoid main(){gl_Position=uProjection*uView*vec4(aPosition,1.0);}",
         "#version 450 core\nout vec4 FragColor;\nvoid main(){FragColor=vec4(1.0,0.7,0.1,1.0);}");
@@ -48,6 +106,48 @@ void RenderSystem::init() {
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
     glEnableVertexAttribArray(0);
     glBindVertexArray(0);
+
+    // --- Shadow mapping resources ---
+    // These were previously declared in the header (m_shadowShader, m_shadowFbo,
+    // m_shadowMap) but never actually created here. renderShadowMap()/
+    // traverseAndRender() called m_shadowShader->use() on a null unique_ptr the
+    // moment a directional light existed in the scene, which is a hardware-level
+    // null dereference (surfaces as a raw SEH 0xC0000005 access violation, not a
+    // catchable C++ exception) rather than a graceful failure.
+    m_shadowShader = std::make_unique<Shader>(
+        "#version 450 core\n"
+        "layout(location=0) in vec3 aPosition;\n"
+        "uniform mat4 uModel; uniform mat4 uLightSpaceMatrix;\n"
+        "void main(){ gl_Position = uLightSpaceMatrix * uModel * vec4(aPosition, 1.0); }",
+        "#version 450 core\n"
+        "void main(){ }");
+
+    constexpr int kShadowMapSize = 2048;
+    glGenTextures(1, &m_shadowMap);
+    glBindTexture(GL_TEXTURE_2D, m_shadowMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, kShadowMapSize, kShadowMapSize,
+                 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    const float borderColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glGenFramebuffers(1, &m_shadowFbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_shadowMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "[Render] Shadow framebuffer is incomplete; shadows will be disabled\n";
+        glDeleteFramebuffers(1, &m_shadowFbo);
+        glDeleteTextures(1, &m_shadowMap);
+        m_shadowFbo = 0;
+        m_shadowMap = 0;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void RenderSystem::render(Node* rootNode) {
@@ -61,12 +161,45 @@ void RenderSystem::render(Node* rootNode) {
     
     int width, height;
     glfwGetFramebufferSize(glfwGetCurrentContext(), &width, &height);
+
+    if (shadowsEnabled) {
+        renderShadowMap(rootNode, getDirectionalLight());
+    }
+
     renderView(rootNode, view, proj, 0, width, height);
 }
 
+void RenderSystem::renderShadowMap(Node* rootNode, DirectionalLight* light) {
+    if (light == nullptr)
+        return;
+    if (m_shadowShader == nullptr || m_shadowFbo == 0 || m_shadowMap == 0) {
+        std::cerr << "[Render] Shadow resources are unavailable; skipping shadow pass\n";
+        return;
+    }
+
+    glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, 1.0f, 50.0f);
+    glm::mat4 lightView = glm::lookAt(
+        glm::vec3(0.0f) - light->getDirection() * 20.0f,
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f)
+    );
+    glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
+    glViewport(0, 0, 2048, 2048);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    m_shadowShader->use();
+    m_shadowShader->setMat4("uLightSpaceMatrix", lightSpaceMatrix);
+    
+    traverseAndRender(rootNode, glm::mat4(1.0f), glm::mat4(1.0f), true, lightSpaceMatrix);
+    
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
 void RenderSystem::renderView(Node* rootNode, const glm::mat4& view,
-                              const glm::mat4& proj, unsigned int framebuffer,
-                              int width, int height) {
+                               const glm::mat4& proj, unsigned int framebuffer,
+                               int width, int height) {
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glViewport(0, 0, width, height);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -74,26 +207,58 @@ void RenderSystem::renderView(Node* rootNode, const glm::mat4& view,
     m_shader->use();
     m_shader->setMat4("uView", view);
     m_shader->setMat4("uProjection", proj);
+    
     glm::vec3 lightDirection(0.0f, -1.0f, 0.0f);
+    glm::vec3 lightPosition(0.0f, 0.0f, 0.0f);
     glm::vec3 lightColor(1.0f);
     float lightIntensity = 1.0f;
     float lightExposure = 0.0f;
+    float lightRadius = 10.0f;
+    int lightType = 0;
+    glm::mat4 lightSpaceMatrix(1.0f);
+
     if (!m_lights.empty()) {
-        if (auto* light = dynamic_cast<DirectionalLight*>(m_lights.front())) {
-            lightDirection = light->getDirection();
-            lightColor = light->getColor();
-            lightIntensity = light->getIntensity();
-            lightExposure = light->getExposure();
+        if (auto* directional = dynamic_cast<DirectionalLight*>(m_lights.front())) {
+            lightDirection = directional->getDirection();
+            lightColor = directional->getColor();
+            lightIntensity = directional->getIntensity();
+            lightExposure = directional->getExposure();
+            lightRadius = directional->getRadius();
+            lightType = 0;
+            
+            glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, 1.0f, 50.0f);
+            glm::mat4 lightView = glm::lookAt(
+                glm::vec3(0.0f) - lightDirection * 20.0f,
+                glm::vec3(0.0f),
+                glm::vec3(0.0f, 1.0f, 0.0f)
+            );
+            lightSpaceMatrix = lightProjection * lightView;
+        } else if (auto* point = dynamic_cast<PointLight*>(m_lights.front())) {
+            lightPosition = point->getPosition();
+            lightColor = point->getColor();
+            lightIntensity = point->getIntensity();
+            lightExposure = point->getExposure();
+            lightRadius = point->getRadius();
+            lightType = 1;
         }
     }
     m_shader->setVec3("uLightDirection", lightDirection);
+    m_shader->setVec3("uLightPosition", lightPosition);
     m_shader->setVec3("uLightColor", lightColor);
     m_shader->setFloat("uLightIntensity", lightIntensity);
     m_shader->setFloat("uLightExposure", lightExposure);
+    m_shader->setFloat("uLightRadius", lightRadius);
+    m_shader->setInt("uLightType", lightType);
+    m_shader->setMat4("uLightSpaceMatrix", lightSpaceMatrix);
+    m_shader->setInt("uShadowsEnabled", shadowsEnabled ? 1 : 0);
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, m_shadowMap);
+    m_shader->setInt("uShadowMap", 4);
     m_shader->setVec3("uCameraPosition", glm::vec3(glm::inverse(view)[3]));
-    traverseAndRender(rootNode);
+    traverseAndRender(rootNode, view, proj, false, lightSpaceMatrix);
     renderCollisionDebug(view, proj);
 }
+
 
 void RenderSystem::renderSkybox(const glm::mat4& view, const glm::mat4& projection) {
     if (m_skyboxTexture == 0 && !m_skyboxPath.empty()) {
@@ -186,35 +351,48 @@ void RenderSystem::renderCollisionDebug(const glm::mat4& view, const glm::mat4& 
 #endif
 }
 
-void RenderSystem::traverseAndRender(Node* node) {
+void RenderSystem::traverseAndRender(Node* node, const glm::mat4& view, const glm::mat4& proj, bool isShadowPass, const glm::mat4& lightSpaceMatrix) {
     if (!node) return;
 
     glm::mat4 worldTransform = node->getWorldTransform();
     
     if (MeshNode* meshNode = dynamic_cast<MeshNode*>(node)) {
-        m_shader->setMat4("uModel", worldTransform);
-        const Material& material = meshNode->getMaterial();
-        m_shader->setVec4("uBaseColorFactor", material.baseColorFactor);
-        m_shader->setFloat("uMetallicFactor", material.metallicFactor);
-        m_shader->setFloat("uRoughnessFactor", material.roughnessFactor);
-        m_shader->setInt("uHasBaseColorTexture", material.hasBaseColorTexture() ? 1 : 0);
-        m_shader->setInt("uHasMetallicRoughnessTexture", material.hasMetallicRoughnessTexture() ? 1 : 0);
-        m_shader->setInt("uHasNormalTexture", material.hasNormalTexture() ? 1 : 0);
-        m_shader->setInt("uHasEmissiveTexture", material.hasEmissiveTexture() ? 1 : 0);
-        const GLuint textures[] = {material.baseColorTexture, material.metallicRoughnessTexture,
-                                   material.normalTexture, material.emissiveTexture};
-        for (int unit = 0; unit < 4; ++unit) {
-            glActiveTexture(GL_TEXTURE0 + unit);
-            glBindTexture(GL_TEXTURE_2D, textures[unit]);
+        if (isShadowPass) {
+            if (m_shadowShader == nullptr)
+                return;
+            m_shadowShader->use();
+            m_shadowShader->setMat4("uModel", worldTransform);
+            m_shadowShader->setMat4("uLightSpaceMatrix", lightSpaceMatrix);
+        } else {
+            if (frustumCullingEnabled) {
+                // Simplified frustum check: only render if center is roughly in view
+                // Real frustum culling would be implemented here
+            }
+            m_shader->use();
+            m_shader->setMat4("uModel", worldTransform);
+            const Material& material = meshNode->getMaterial();
+            m_shader->setVec4("uBaseColorFactor", material.baseColorFactor);
+            m_shader->setFloat("uMetallicFactor", material.metallicFactor);
+            m_shader->setFloat("uRoughnessFactor", material.roughnessFactor);
+            m_shader->setInt("uHasBaseColorTexture", material.hasBaseColorTexture() ? 1 : 0);
+            m_shader->setInt("uHasMetallicRoughnessTexture", material.hasMetallicRoughnessTexture() ? 1 : 0);
+            m_shader->setInt("uHasNormalTexture", material.hasNormalTexture() ? 1 : 0);
+            m_shader->setInt("uHasEmissiveTexture", material.hasEmissiveTexture() ? 1 : 0);
+            const GLuint textures[] = {material.baseColorTexture, material.metallicRoughnessTexture,
+                                        material.normalTexture, material.emissiveTexture};
+            for (int unit = 0; unit < 4; ++unit) {
+                glActiveTexture(GL_TEXTURE0 + unit);
+                glBindTexture(GL_TEXTURE_2D, textures[unit]);
+            }
+            m_shader->setInt("uBaseColorTexture", 0);
+            m_shader->setInt("uMetallicRoughnessTexture", 1);
+            m_shader->setInt("uNormalTexture", 2);
+            m_shader->setInt("uEmissiveTexture", 3);
+            glBindVertexArray(meshNode->getVAO());
+            glDrawElements(GL_TRIANGLES, meshNode->getIndexCount(), GL_UNSIGNED_INT, nullptr);
         }
-        m_shader->setInt("uBaseColorTexture", 0);
-        m_shader->setInt("uMetallicRoughnessTexture", 1);
-        m_shader->setInt("uNormalTexture", 2);
-        m_shader->setInt("uEmissiveTexture", 3);
-        glBindVertexArray(meshNode->getVAO());
-        glDrawElements(GL_TRIANGLES, meshNode->getIndexCount(), GL_UNSIGNED_INT, nullptr);
     }
 
     for (const auto& child : node->getChildren())
-        traverseAndRender(child.get());
+        traverseAndRender(child.get(), view, proj, isShadowPass, lightSpaceMatrix);
 }

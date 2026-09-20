@@ -28,20 +28,27 @@ public:
     void setSkyboxPath(const std::string& path) { m_skyboxPath = path; }
     DirectionalLight* getDirectionalLight() const;
 
+    bool shadowsEnabled = true;
+    bool frustumCullingEnabled = true;
+
 private:
     RenderSystem() = default;
     std::vector<Light*> m_lights;
     std::unique_ptr<Shader> m_shader;
     std::unique_ptr<Shader> m_debugShader;
     std::unique_ptr<Shader> m_skyboxShader;
+    std::unique_ptr<Shader> m_shadowShader;
     unsigned int m_debugVao = 0;
     unsigned int m_debugVbo = 0;
     unsigned int m_skyboxVao = 0;
     unsigned int m_skyboxVbo = 0;
     unsigned int m_skyboxTexture = 0;
+    unsigned int m_shadowFbo = 0;
+    unsigned int m_shadowMap = 0;
     std::string m_skyboxPath;
     ArcRotateCamera* m_desktopCamera = nullptr;
-    void traverseAndRender(Node* node);
+    void traverseAndRender(Node* node, const glm::mat4& view, const glm::mat4& proj, bool isShadowPass, const glm::mat4& lightSpaceMatrix);
     void renderCollisionDebug(const glm::mat4& view, const glm::mat4& projection);
     void renderSkybox(const glm::mat4& view, const glm::mat4& projection);
+    void renderShadowMap(Node* rootNode, DirectionalLight* light);
 };

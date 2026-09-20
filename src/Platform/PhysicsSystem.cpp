@@ -1,3 +1,4 @@
+//[cite: 12]
 #include "PhysicsSystem.h"
 #include "scene/MeshNode.h"
 #include <array>
@@ -7,6 +8,9 @@
 #include <cstdio>
 #include <cmath>
 #include <exception>
+#include <functional>
+#include <limits>
+#include <vector>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -201,63 +205,109 @@ void PhysicsBody::appendDebugLines(std::vector<PhysicsDebugLine>& lines) const {
                            static_cast<float>(position.GetY()),
                            static_cast<float>(position.GetZ()));
     debugStage = "shape subtype";
-    if (m_shape->GetSubType() != JPH::EShapeSubType::ConvexHull) {
-        if (!m_debugWarningLogged) {
-            std::cerr << "[Physics] Skipping collision debug for unsupported "
-                         "shape type\n";
+    const JPH::EShapeSubType subType = m_shape->GetSubType();
+
+    if (subType == JPH::EShapeSubType::ConvexHull) {
+        debugStage = "convex hull cast";
+        // The subtype check above is Jolt's runtime type check. Avoid C++ RTTI
+        // here: Jolt may be built with different RTTI settings than the engine.
+        const auto* hull = static_cast<const JPH::ConvexHullShape*>(m_shape.GetPtr());
+        if (hull != nullptr) {
+            debugStage = "convex hull faces";
+            for (uint32_t faceIndex = 0; faceIndex < hull->GetNumFaces(); ++faceIndex) {
+                debugStage = "face vertex count";
+                const uint32_t count = hull->GetNumVerticesInFace(faceIndex);
+                if (count < 2)
+                    continue;
+                std::vector<uint32_t> face(count);
+                debugStage = "face vertex indices";
+                const uint32_t written = hull->GetFaceVertices(
+                    faceIndex, count, face.data());
+                if (written != count)
+                    continue;
+                for (uint32_t i = 0; i < count; ++i) {
+                    if (face[i] >= hull->GetNumPoints() ||
+                        face[(i + 1) % count] >= hull->GetNumPoints()) {
+                        if (!m_debugWarningLogged) {
+                            std::cerr << "[Physics] Skipping collision debug face "
+                                         "with an invalid vertex index\n";
+                            m_debugWarningLogged = true;
+                        }
+                        break;
+                    }
+                    debugStage = "hull point access";
+                    const JPH::Vec3 a = hull->GetPoint(face[i]);
+                    const JPH::Vec3 b = hull->GetPoint(face[(i + 1) % count]);
+                    const glm::vec3 from = center + q * glm::vec3(a.GetX(), a.GetY(), a.GetZ());
+                    const glm::vec3 to = center + q * glm::vec3(b.GetX(), b.GetY(), b.GetZ());
+                    if (!std::isfinite(from.x) || !std::isfinite(from.y) ||
+                        !std::isfinite(from.z) || !std::isfinite(to.x) ||
+                        !std::isfinite(to.y) || !std::isfinite(to.z)) {
+                        if (!m_debugWarningLogged) {
+                            std::cerr << "[Physics] Skipping collision debug face with "
+                                         "non-finite vertex data\n";
+                            m_debugWarningLogged = true;
+                        }
+                        break;
+                    }
+                    lines.push_back({from, to});
+                }
+            }
+        } else if (!m_debugWarningLogged) {
+            std::cerr << "[Physics] Collision debug shape subtype is ConvexHull but "
+                         "the concrete hull cast failed for node '"
+                      << m_node->getName() << "'\n";
             m_debugWarningLogged = true;
         }
-        return;
-    }
-    debugStage = "convex hull cast";
-    // The subtype check above is Jolt's runtime type check. Avoid C++ RTTI here:
-    // Jolt may be built with different RTTI settings than the engine.
-    const auto* hull = static_cast<const JPH::ConvexHullShape*>(m_shape.GetPtr());
-    if (hull != nullptr) {
-        debugStage = "convex hull faces";
-        for (uint32_t faceIndex = 0; faceIndex < hull->GetNumFaces(); ++faceIndex) {
-            debugStage = "face vertex count";
-            const uint32_t count = hull->GetNumVerticesInFace(faceIndex);
-            if (count < 2)
-                continue;
-            std::vector<uint32_t> face(count);
-            debugStage = "face vertex indices";
-            const uint32_t written = hull->GetFaceVertices(
-                faceIndex, count, face.data());
-            if (written != count)
-                continue;
-            for (uint32_t i = 0; i < count; ++i) {
-                if (face[i] >= hull->GetNumPoints() ||
-                    face[(i + 1) % count] >= hull->GetNumPoints()) {
+    } else if (subType == JPH::EShapeSubType::Box) {
+        // Box-shaped bodies (explicit ColliderType::Box, too few points to hull,
+        // or genuinely degenerate geometry) previously had no debug visual at
+        // all, which made a body silently invisible to "Show Collision Debug"
+        // rather than showing something. Draw its 12 edges instead.
+        debugStage = "box shape cast";
+        const auto* box = static_cast<const JPH::BoxShape*>(m_shape.GetPtr());
+        if (box != nullptr) {
+            debugStage = "box half extent";
+            const JPH::Vec3 he = box->GetHalfExtent();
+            const glm::vec3 h(he.GetX(), he.GetY(), he.GetZ());
+            const glm::vec3 corners[8] = {
+                {-h.x, -h.y, -h.z}, { h.x, -h.y, -h.z}, { h.x,  h.y, -h.z}, {-h.x,  h.y, -h.z},
+                {-h.x, -h.y,  h.z}, { h.x, -h.y,  h.z}, { h.x,  h.y,  h.z}, {-h.x,  h.y,  h.z},
+            };
+            debugStage = "box world corners";
+            glm::vec3 world[8];
+            bool valid = true;
+            for (int i = 0; i < 8 && valid; ++i) {
+                world[i] = center + q * corners[i];
+                if (!std::isfinite(world[i].x) || !std::isfinite(world[i].y) ||
+                    !std::isfinite(world[i].z)) {
                     if (!m_debugWarningLogged) {
-                        std::cerr << "[Physics] Skipping collision debug face "
-                                     "with an invalid vertex index\n";
+                        std::cerr << "[Physics] Skipping box collision debug with "
+                                     "non-finite vertex data for node '"
+                                  << m_node->getName() << "'\n";
                         m_debugWarningLogged = true;
                     }
-                    break;
+                    valid = false;
                 }
-                debugStage = "hull point access";
-                const JPH::Vec3 a = hull->GetPoint(face[i]);
-                const JPH::Vec3 b = hull->GetPoint(face[(i + 1) % count]);
-                const glm::vec3 from = center + q * glm::vec3(a.GetX(), a.GetY(), a.GetZ());
-                const glm::vec3 to = center + q * glm::vec3(b.GetX(), b.GetY(), b.GetZ());
-                if (!std::isfinite(from.x) || !std::isfinite(from.y) ||
-                    !std::isfinite(from.z) || !std::isfinite(to.x) ||
-                    !std::isfinite(to.y) || !std::isfinite(to.z)) {
-                    if (!m_debugWarningLogged) {
-                        std::cerr << "[Physics] Skipping collision debug face with "
-                                     "non-finite vertex data\n";
-                        m_debugWarningLogged = true;
-                    }
-                    break;
-                }
-                lines.push_back({from, to});
             }
+            if (valid) {
+                static constexpr int edges[12][2] = {
+                    {0, 1}, {1, 2}, {2, 3}, {3, 0}, // bottom face
+                    {4, 5}, {5, 6}, {6, 7}, {7, 4}, // top face
+                    {0, 4}, {1, 5}, {2, 6}, {3, 7}, // verticals
+                };
+                for (const auto& edge : edges)
+                    lines.push_back({world[edge[0]], world[edge[1]]});
+            }
+        } else if (!m_debugWarningLogged) {
+            std::cerr << "[Physics] Collision debug shape subtype is Box but "
+                         "the concrete box cast failed for node '"
+                      << m_node->getName() << "'\n";
+            m_debugWarningLogged = true;
         }
     } else if (!m_debugWarningLogged) {
-        std::cerr << "[Physics] Collision debug shape subtype is ConvexHull but "
-                     "the concrete hull cast failed for node '"
-                  << m_node->getName() << "'\n";
+        std::cerr << "[Physics] Skipping collision debug for unsupported "
+                     "shape type\n";
         m_debugWarningLogged = true;
     }
 #if defined(_CPPUNWIND)
@@ -384,24 +434,68 @@ PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
     PhysicsBody* result = body.get();
 #ifdef CHISEL_ENABLE_JOLT
     std::vector<JPH::Vec3> hullPoints;
-    if (const auto* mesh = dynamic_cast<const MeshNode*>(node)) {
-        constexpr float epsilon = 1.0e-4f;
-        for (const glm::vec3& point : mesh->getCollisionVertices()) {
-            bool duplicate = false;
-            for (const JPH::Vec3& existing : hullPoints) {
-                if ((point.x - existing.GetX()) * (point.x - existing.GetX()) +
-                    (point.y - existing.GetY()) * (point.y - existing.GetY()) +
-                    (point.z - existing.GetZ()) * (point.z - existing.GetZ()) <
-                    epsilon * epsilon) {
-                    duplicate = true;
-                    break;
+    std::function<void(Node*)> collectPoints = [&](Node* node) {
+        if (auto* mesh = dynamic_cast<const MeshNode*>(node)) {
+            constexpr float epsilon = 1.0e-4f;
+            for (const glm::vec3& point : mesh->getCollisionVertices()) {
+                bool duplicate = false;
+                for (const JPH::Vec3& existing : hullPoints) {
+                    if ((point.x - existing.GetX()) * (point.x - existing.GetX()) +
+                        (point.y - existing.GetY()) * (point.y - existing.GetY()) +
+                        (point.z - existing.GetZ()) * (point.z - existing.GetZ()) <
+                        epsilon * epsilon) {
+                        duplicate = true;
+                        break;
+                    }
                 }
+                if (!duplicate)
+                    hullPoints.emplace_back(point.x, point.y, point.z);
             }
-            if (!duplicate)
-                hullPoints.emplace_back(point.x, point.y, point.z);
+        }
+        for (const auto& child : node->getChildren())
+            collectPoints(child.get());
+    };
+    collectPoints(node);
+
+    if (hullPoints.empty()) {
+        std::cerr << "[Physics] Warning: Rigid body for node '" << node->getName() 
+                  << "' has zero collision vertices after merging children. "
+                  << "Falling back to box shape.\n";
+    }
+
+    // Guard against truly degenerate point sets - a set that has collapsed onto
+    // a line or a single point (2 or more near-zero axes). This is the case
+    // that can pass Jolt's HasError() validation but crash later inside its
+    // internal face/plane math (a raw access violation, not a catchable C++
+    // exception). A single thin axis is NOT degenerate - it's completely
+    // normal for a floor, wall, or any flat mesh, and Jolt builds a valid
+    // convex hull from flat/planar point sets without issue. Only bail to the
+    // box fallback when the geometry is thin on 2+ axes at once.
+    bool geometryDegenerate = false;
+    if (hullPoints.size() >= 4) {
+        glm::vec3 minPoint(std::numeric_limits<float>::max());
+        glm::vec3 maxPoint(std::numeric_limits<float>::lowest());
+        for (const JPH::Vec3& p : hullPoints) {
+            const glm::vec3 v(p.GetX(), p.GetY(), p.GetZ());
+            minPoint = glm::min(minPoint, v);
+            maxPoint = glm::max(maxPoint, v);
+        }
+        const glm::vec3 extent = maxPoint - minPoint;
+        constexpr float kMinExtent = 0.005f; // 5mm; tune to your world scale
+        const int thinAxes = (extent.x < kMinExtent ? 1 : 0) +
+                             (extent.y < kMinExtent ? 1 : 0) +
+                             (extent.z < kMinExtent ? 1 : 0);
+        if (thinAxes >= 2) {
+            geometryDegenerate = true;
+            std::cerr << "[Physics] Node '" << node->getName()
+                      << "' collision geometry is collinear/point-like "
+                      << "(extent " << extent.x << ", " << extent.y << ", "
+                      << extent.z << ") - using box shape instead of a convex "
+                      << "hull to avoid an unstable hull build.\n";
         }
     }
-    if (colliderType == ColliderType::Box || hullPoints.size() < 4) {
+
+    if (colliderType == ColliderType::Box || hullPoints.size() < 4 || geometryDegenerate) {
         const glm::vec3 safeSize = glm::max(size, glm::vec3(0.01f));
         JPH::BoxShapeSettings shapeSettings(
             JPH::Vec3(safeSize.x * 0.5f, safeSize.y * 0.5f, safeSize.z * 0.5f),
@@ -483,7 +577,7 @@ PhysicsBody* PhysicsSystem::createRigidBody(Node* node, BodyType type,
     }
     if (!m_physicsSystem.GetBodyInterface().IsAdded(bodyID)) {
         std::cerr << "[Physics] Rigid body was not added for node '"
-                  << node->getName() << "'\n";
+                      << node->getName() << "'\n";
         return nullptr;
     }
     result->m_bodyID = bodyID;
@@ -562,4 +656,44 @@ std::vector<PhysicsDebugLine> PhysicsSystem::getDebugLines() const {
 #endif
     }
     return lines;
+}
+
+void PhysicsSystem::setBodyPosition(Node* node, const glm::vec3& position) {
+#ifdef CHISEL_ENABLE_JOLT
+    for (const auto& body : m_bodies) {
+        if (body != nullptr && body->m_node == node && !body->m_bodyID.IsInvalid()) {
+            m_physicsSystem.GetBodyInterface().SetPosition(
+                body->m_bodyID,
+                JPH::RVec3(position.x, position.y, position.z),
+                JPH::EActivation::Activate);
+            break;
+        }
+    }
+#endif
+}
+
+void PhysicsSystem::addForce(Node* node, const glm::vec3& force) {
+#ifdef CHISEL_ENABLE_JOLT
+    for (const auto& body : m_bodies) {
+        if (body != nullptr && body->m_node == node && !body->m_bodyID.IsInvalid()) {
+            m_physicsSystem.GetBodyInterface().AddForce(
+                body->m_bodyID,
+                JPH::Vec3(force.x, force.y, force.z));
+            break;
+        }
+    }
+#endif
+}
+
+void PhysicsSystem::setLinearVelocity(Node* node, const glm::vec3& velocity) {
+#ifdef CHISEL_ENABLE_JOLT
+    for (const auto& body : m_bodies) {
+        if (body != nullptr && body->m_node == node && !body->m_bodyID.IsInvalid()) {
+            m_physicsSystem.GetBodyInterface().SetLinearVelocity(
+                body->m_bodyID,
+                JPH::Vec3(velocity.x, velocity.y, velocity.z));
+            break;
+        }
+    }
+#endif
 }

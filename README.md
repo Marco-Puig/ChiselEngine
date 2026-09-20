@@ -71,6 +71,13 @@ sun:setColor(1.0, 0.9, 0.8)
 sun:setPosition(0.0, 4.0, 0.0)
 sun:setIntensity(1.0)
 sun:setExposure(0.0)
+sun:setRadius(10.0)
+
+local bulb = scene:createPointLight("Bulb", 2.0, 4.0, 2.0)
+bulb:setColor(1.0, 0.8, 0.4)
+bulb:setIntensity(2.0)
+bulb:setExposure(0.0)
+bulb:setRadius(15.0)
 
 Engine.setSkybox("resources/skybox.jpg")
 

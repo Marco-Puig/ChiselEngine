@@ -7,7 +7,7 @@ function game.onStart(scene, animator)
 
     Engine.setSkybox("resources/skybox.jpg")
 
-    local floor = scene:loadMesh("resources/zen_garden.glb", "Floor")
+    local floor = scene:loadMesh("resources/plane.glb", "Floor")
     floor:setPosition(0.0, 0.0, 0.0)
     Engine.addRigidBody(floor, "static", "box", 0.8, 0.0)
 

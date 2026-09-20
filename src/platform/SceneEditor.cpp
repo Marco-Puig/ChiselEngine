@@ -264,7 +264,7 @@ void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
     m_toggleKeyWasDown = f1Down;
 
     if (m_visible) {
-        ImGui::SetNextWindowSize(ImVec2(340.0f, 550.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(380.0f, 550.0f), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2(300.0f, 220.0f),
                                              ImVec2(FLT_MAX, FLT_MAX));
         const ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse;
@@ -294,13 +294,29 @@ void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
                 PhysicsSystem::getInstance().setDebugDrawEnabled(m_showCollisionDebug);
             if (ImGui::Checkbox("V-Sync", &m_vsync))
                 window.setVSync(m_vsync);
-            if (DirectionalLight* light = RenderSystem::getInstance().getDirectionalLight()) {
+            if (ImGui::Checkbox("Shadows", &RenderSystem::getInstance().shadowsEnabled)) {
+                // Shadows enabled/disabled
+            }
+            if (ImGui::Checkbox("Frustum Culling", &RenderSystem::getInstance().frustumCullingEnabled)) {
+                // Culling enabled/disabled
+            }
+            if (DirectionalLight* light = dynamic_cast<DirectionalLight*>(m_selectedNode)) {
                 float intensity = light->getIntensity();
                 float exposure = light->getExposure();
                 if (ImGui::SliderFloat("Intensity", &intensity, 0.0f, 8.0f, "%.2f"))
                     light->setIntensity(intensity);
                 if (ImGui::SliderFloat("Exposure", &exposure, -4.0f, 4.0f, "%.2f EV"))
                     light->setExposure(exposure);
+            } else if (PointLight* pLight = dynamic_cast<PointLight*>(m_selectedNode)) {
+                float intensity = pLight->getIntensity();
+                float exposure = pLight->getExposure();
+                float radius = pLight->getRadius();
+                if (ImGui::SliderFloat("Intensity", &intensity, 0.0f, 8.0f, "%.2f"))
+                    pLight->setIntensity(intensity);
+                if (ImGui::SliderFloat("Exposure", &exposure, -4.0f, 4.0f, "%.2f EV"))
+                    pLight->setExposure(exposure);
+                if (ImGui::SliderFloat("Radius", &radius, 0.1f, 100.0f, "%.2f"))
+                    pLight->setRadius(radius);
             }
             ImGui::Separator();
             if (ImGui::RadioButton("Move", m_gizmoOperation == 0))

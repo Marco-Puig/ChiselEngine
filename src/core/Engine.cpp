@@ -70,8 +70,16 @@ void Engine::run(IGame* game) {
         m_window->pollEvents();
         SceneEditor::getInstance().beginFrame();
         SceneEditor::getInstance().updateGizmo(game->getSceneRoot(), game->getCamera());
-        PhysicsSystem::getInstance().update(dt);
+        
+        // 1. Process game logic and scripts first
         game->update(dt);
+        
+        // 2. Sync script/animation transform overrides to Jolt
+        PhysicsSystem::getInstance().syncAnimationDrivenNodes();
+        
+        // 3. Step physics simulation and pull data back to Nodes
+        PhysicsSystem::getInstance().update(dt);
+        
         xr.syncActions();
         if (xr.beginFrame()) {
             for (uint32_t eye = 0; eye < 2; ++eye) {

@@ -17,8 +17,22 @@
 
 namespace {
 void setPosition(Node* node, float x, float y, float z) {
-    if (node != nullptr)
+    if (node != nullptr) {
         node->setPosition(glm::vec3(x, y, z));
+        PhysicsSystem::getInstance().setBodyPosition(node, glm::vec3(x, y, z));
+    }
+}
+
+void addForce(Node* node, float x, float y, float z) {
+    if (node != nullptr) {
+        PhysicsSystem::getInstance().addForce(node, glm::vec3(x, y, z));
+    }
+}
+
+void setLinearVelocity(Node* node, float x, float y, float z) {
+    if (node != nullptr) {
+        PhysicsSystem::getInstance().setLinearVelocity(node, glm::vec3(x, y, z));
+    }
 }
 
 void setScale(Node* node, float x, float y, float z) {
@@ -27,10 +41,11 @@ void setScale(Node* node, float x, float y, float z) {
 }
 
 void setLightPosition(DirectionalLight* light, float x, float y, float z) {
-    setPosition(light, x, y, z);
+    if (light != nullptr)
+        light->setPosition(glm::vec3(x, y, z));
 }
 
-void setLightColor(DirectionalLight* light, float r, float g, float b) {
+void setLightColorBase(Light* light, float r, float g, float b) {
     if (light != nullptr)
         light->setColor(glm::vec3(r, g, b));
 }
@@ -47,7 +62,7 @@ Node* loadMesh(Scene* scene, const std::string& path,
 }
 
 DirectionalLight* createDirectionalLight(Scene* scene,
-                                          const std::string& name) {
+                                           const std::string& name) {
     if (scene == nullptr)
         return nullptr;
     auto light = std::make_unique<DirectionalLight>(
@@ -57,6 +72,49 @@ DirectionalLight* createDirectionalLight(Scene* scene,
     RenderSystem::getInstance().addLight(result);
     return result;
 }
+
+PointLight* createPointLight(Scene* scene, const std::string& name, float x, float y, float z) {
+    if (scene == nullptr) return nullptr;
+    auto light = std::make_unique<PointLight>(name, glm::vec3(x, y, z));
+    PointLight* result = light.get();
+    scene->adopt(std::move(light));
+    RenderSystem::getInstance().addLight(result);
+    return result;
+}
+
+void setPointLightPosition(PointLight* light, float x, float y, float z) {
+    if (light != nullptr)
+        light->setPosition(glm::vec3(x, y, z));
+}
+
+void setDirLightColor(DirectionalLight* light, float r, float g, float b) {
+    setLightColorBase(light, r, g, b);
+}
+
+void setPointLightColor(PointLight* light, float r, float g, float b) {
+    setLightColorBase(light, r, g, b);
+}
+
+void setDirIntensity(DirectionalLight* light, float intensity) {
+    light->setIntensity(intensity);
+}
+
+void setDirExposure(DirectionalLight* light, float exposure) {
+    light->setExposure(exposure);
+}
+
+void setPointIntensity(PointLight* light, float intensity) {
+    light->setIntensity(intensity);
+}
+
+void setPointExposure(PointLight* light, float exposure) {
+    light->setExposure(exposure);
+}
+
+void setPointRadius(PointLight* light, float radius) {
+    light->setRadius(radius);
+}
+
 
 bool addRigidBody(Node* node, const std::string& type,
                    const std::string& collider,
@@ -133,6 +191,7 @@ void LuaRuntime::bindEngineApi() {
             .addFunction("findNode", &Scene::findByName)
             .addFunction("loadMesh", &loadMesh)
             .addFunction("createDirectionalLight", &createDirectionalLight)
+            .addFunction("createPointLight", &createPointLight)
         .endClass();
     luabridge::getGlobalNamespace(m_state)
         .beginClass<Node>("Node")
@@ -143,12 +202,24 @@ void LuaRuntime::bindEngineApi() {
             .addFunction("getPositionY", &getPositionY)
             .addFunction("getPositionZ", &getPositionZ)
             .addFunction("setScale", &setScale)
+            .addFunction("addForce", &addForce)
+            .addFunction("setLinearVelocity", &setLinearVelocity)
+        .endClass()
+        .beginClass<Light>("Light")
+            .addFunction("setColor", &setLightColorBase)
         .endClass()
         .beginClass<DirectionalLight>("DirectionalLight")
             .addFunction("setPosition", &setLightPosition)
-            .addFunction("setColor", &setLightColor)
-            .addFunction("setIntensity", &DirectionalLight::setIntensity)
-            .addFunction("setExposure", &DirectionalLight::setExposure)
+            .addFunction("setColor", &setDirLightColor)
+            .addFunction("setIntensity", &setDirIntensity)
+            .addFunction("setExposure", &setDirExposure)
+        .endClass()
+        .beginClass<PointLight>("PointLight")
+            .addFunction("setPosition", &setPointLightPosition)
+            .addFunction("setColor", &setPointLightColor)
+            .addFunction("setIntensity", &setPointIntensity)
+            .addFunction("setExposure", &setPointExposure)
+            .addFunction("setRadius", &setPointRadius)
         .endClass();
     luabridge::getGlobalNamespace(m_state)
         .beginNamespace("Engine")

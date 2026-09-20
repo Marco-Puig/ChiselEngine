@@ -412,7 +412,7 @@ Node* GLBLoader::loadGLB(const std::string& path) {
         meshNode->setPosition(pos);
         meshNode->setRotation(rot);
         meshNode->setScale(scale);
-
+    
         std::vector<glm::vec3> subCollisionVertices;
         const std::vector<glm::vec3> readPositions = readMeshPositions(model, meshIndex, path);
         for (const glm::vec3& point : readPositions) {
@@ -420,25 +420,39 @@ Node* GLBLoader::loadGLB(const std::string& path) {
             subCollisionVertices.push_back(transformed);
         }
         meshNode->setCollisionVertices(std::move(subCollisionVertices));
-
-        if (firstMaterialIndex >= 0 && firstMaterialIndex < static_cast<int>(model.materials.size())) {
-            const tinygltf::Material& source = model.materials[firstMaterialIndex];
-            Material material;
-            const auto& pbr = source.pbrMetallicRoughness;
-            material.baseColorFactor = glm::vec4(
-                static_cast<float>(pbr.baseColorFactor[0]),
-                static_cast<float>(pbr.baseColorFactor[1]),
-                static_cast<float>(pbr.baseColorFactor[2]),
-                static_cast<float>(pbr.baseColorFactor[3]));
-            material.metallicFactor = static_cast<float>(pbr.metallicFactor);
-            material.roughnessFactor = static_cast<float>(pbr.roughnessFactor);
-            material.baseColorTexture = materialTexture(model, pbr.baseColorTexture.index, true);
-            material.metallicRoughnessTexture = materialTexture(model, pbr.metallicRoughnessTexture.index, false);
-            material.normalTexture = materialTexture(model, source.normalTexture.index, false);
-            material.emissiveTexture = materialTexture(model, source.emissiveTexture.index, true);
-            meshNode->setMaterial(material);
+    
+        // Resolve material for this specific primitive
+        if (sourceMesh.primitives.empty()) {
+            std::cerr << "GLB mesh " << meshIndex << " has no primitives\n";
+        } else {
+            // Use the material of the first primitive for the MeshNode
+            int matIndex = sourceMesh.primitives[0].material;
+            if (matIndex >= 0 && matIndex < static_cast<int>(model.materials.size())) {
+                const tinygltf::Material& source = model.materials[matIndex];
+                Material material;
+                const auto& pbr = source.pbrMetallicRoughness;
+                material.baseColorFactor = glm::vec4(
+                    static_cast<float>(pbr.baseColorFactor[0]),
+                    static_cast<float>(pbr.baseColorFactor[1]),
+                    static_cast<float>(pbr.baseColorFactor[2]),
+                    static_cast<float>(pbr.baseColorFactor[3]));
+                material.metallicFactor = static_cast<float>(pbr.metallicFactor);
+                material.roughnessFactor = static_cast<float>(pbr.roughnessFactor);
+                material.baseColorTexture = materialTexture(model, pbr.baseColorTexture.index, true);
+                material.metallicRoughnessTexture = materialTexture(model, pbr.metallicRoughnessTexture.index, false);
+                material.normalTexture = materialTexture(model, source.normalTexture.index, false);
+                material.emissiveTexture = materialTexture(model, source.emissiveTexture.index, true);
+                meshNode->setMaterial(material);
+                
+                std::cout << "[GLB] Loaded " << meshNode->getName() << " with material " << matIndex 
+                          << " (Color: " << material.baseColorFactor.r << ", " << material.baseColorFactor.g 
+                          << ", " << material.baseColorFactor.b << ")\n";
+            } else {
+                std::cout << "[GLB] " << meshNode->getName() << " uses default material\n";
+            }
         }
         root->addChild(std::unique_ptr<MeshNode>(meshNode));
+
     }
 
     return root;

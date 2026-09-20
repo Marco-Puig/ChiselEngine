@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <memory>
 #include <vector>
+#include <unordered_map>
 
 #ifdef CHISEL_ENABLE_JOLT
 #include <Jolt/Jolt.h>
@@ -33,7 +34,6 @@ public:
     void appendDebugLines(std::vector<PhysicsDebugLine>& lines) const;
 
 private:
-    friend class PhysicsBody;
     friend class PhysicsSystem;
     Node* m_node;
     BodyType m_type;
@@ -67,6 +67,10 @@ public:
     void wakeDynamicBodies();
     std::vector<PhysicsDebugLine> getDebugLines() const;
 
+    void setBodyPosition(Node* node, const glm::vec3& position);
+    void addForce(Node* node, const glm::vec3& force);
+    void setLinearVelocity(Node* node, const glm::vec3& velocity);
+
 private:
     friend class PhysicsBody;
     PhysicsSystem() = default;
@@ -78,7 +82,11 @@ private:
     double m_accumulator = 0.0;
     bool m_initialized = false;
     bool m_debugDrawEnabled = false;
+
 #ifdef CHISEL_ENABLE_JOLT
+    std::unordered_map<Node*, JPH::BodyID> m_nodeToBody;
+    JPH::BodyID getBodyIdFromNode(Node* node);
+
     JPH::PhysicsSystem m_physicsSystem;
     JPH::TempAllocator* m_tempAllocator = nullptr;
     JPH::JobSystem* m_jobSystem = nullptr;
