@@ -1,6 +1,6 @@
 local game = {}
 
-local frogRotationId = -1
+local floorRotationId = -1
 local timeElapsed = 0.0
 
 function game.onStart(scene, animator)
@@ -14,12 +14,13 @@ function game.onStart(scene, animator)
     local floor = scene:loadMesh("resources/plane.glb", "Floor")
     floor:setPosition(0.0, 0.0, 0.0)
     Engine.addRigidBody(floor, "static", "convex", 0.8, 0.0)
+    floorRotationId = animator:procedural(floor, "y", "positive", "rotation", 1.0)
 
     local frog = scene:loadMesh("resources/frog.glb", "Frog")
     if frog ~= nil then
         frog:setPosition(0.0, 3.0, 0.0)
         Engine.addRigidBody(frog, "dynamic", "convex", 0.6, 0.1)
-        frogRotationId = animator:procedural(frog, "y", "positive", "rotation", 1.0)
+        
     end
 end
 
@@ -30,10 +31,6 @@ function game.onUpdate(deltaTime, scene, animator)
     if frog ~= nil then
         if frog:getPositionY() < -100.0 then
             frog:setPosition(0.0, 3.0, 0.0)
-        end
-
-        if timeElapsed > 5.0 and timeElapsed < 5.1 then
-            animator:stopProcedural(frogRotationId)
         end
     end
 end

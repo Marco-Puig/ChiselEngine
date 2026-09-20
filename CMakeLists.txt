@@ -177,6 +177,18 @@ else()
     target_compile_options(imgui_backend PRIVATE -include glad/glad.h)
 endif()
 
+add_library(imguizmo_backend STATIC
+    ${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp
+)
+target_include_directories(imguizmo_backend SYSTEM PUBLIC
+    ${imguizmo_SOURCE_DIR}/src
+)
+target_link_libraries(imguizmo_backend PUBLIC imgui_backend)
+
+if(MSVC)
+    target_compile_options(imguizmo_backend PRIVATE /wd4245)
+endif()
+
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
 )
@@ -222,12 +234,12 @@ target_link_libraries(ChiselEngine PRIVATE
     tinygltf
     OpenGL::GL
     imgui_backend
+    imguizmo_backend
 )
 if(CHISEL_ENABLE_LUA)
     target_link_libraries(ChiselEngine PRIVATE lua)
     target_compile_definitions(ChiselEngine PRIVATE CHISEL_ENABLE_LUA)
 endif()
-target_sources(ChiselEngine PRIVATE ${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp)
 
 if(WIN32)
     target_compile_definitions(ChiselEngine PRIVATE

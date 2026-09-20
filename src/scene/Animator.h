@@ -53,7 +53,6 @@ public:
     }
 
     void update(float deltaTime) {
-        // 1. Update Procedural Animations
         for (const Procedure& procedure : m_procedures) {
             if (!procedure.active) continue;
 
@@ -72,7 +71,6 @@ public:
             }
         }
         
-        // 2. Update GLB Node Animations
         for (auto& activeAnim : m_activeNodeAnimations) {
             if (!activeAnim.active) continue;
             
@@ -124,7 +122,6 @@ public:
         return procedural(node, selectedAxis, selectedDirection, selectedType, speed);
     }
 
-    // --- Procedural Play/Stop Controls ---
     void playProcedural(int id) {
         if (id >= 0 && id < static_cast<int>(m_procedures.size())) 
             m_procedures[id].active = true;
@@ -135,7 +132,6 @@ public:
             m_procedures[id].active = false;
     }
 
-    // --- GLB Node Animation Controls ---
     void registerAnimationClip(const std::string& meshKey, const AnimationClip& clip) {
         m_animationLibrary[meshKey][clip.name] = clip;
     }
@@ -143,17 +139,15 @@ public:
     void playAnimation(Node* node, const std::string& animName) {
         if (!node) return;
         
-        // Search loaded animation library for clip matching animName
         for (auto& [meshKey, clips] : m_animationLibrary) {
             if (clips.find(animName) != clips.end()) {
-                // Check if already active
                 for (auto& active : m_activeNodeAnimations) {
                     if (active.clip.name == animName) {
                         active.active = true;
                         return;
                     }
                 }
-                // Add new active animation instance
+
                 m_activeNodeAnimations.push_back({clips[animName], 0.0f, true});
                 return;
             }
