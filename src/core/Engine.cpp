@@ -83,6 +83,12 @@ void Engine::run(IGame* game) {
 
     auto lastTime = std::chrono::high_resolution_clock::now();
 
+    // Creating and destroying GL objects every frame will severely impact VR performance.
+    GLuint eyeFbo[2] = {0, 0};
+    GLuint eyeDepth[2] = {0, 0};
+    glGenFramebuffers(2, eyeFbo);
+    glGenRenderbuffers(2, eyeDepth);
+
     while (!m_window->shouldClose()) {
         auto currentTime = std::chrono::high_resolution_clock::now();
         float dt = std::chrono::duration<float>(currentTime - lastTime).count();
@@ -119,19 +125,12 @@ void Engine::run(IGame* game) {
                 }
 
                 // Render the directional shadow map once per XR frame.
-                //
-                // Using the first successfully acquired eye view is good enough for a
-                // single directional shadow map. Both eyes then sample the same map.
                 if (!shadowMapPrepared) {
                     RenderSystem::getInstance().updateShadowMap(game->getSceneRoot(), view);
                     shadowMapPrepared = true;
                 }
 
-                GLuint framebuffer = 0;
-                GLuint depthBuffer = 0;
-
-                glGenFramebuffers(1, &framebuffer);
-                glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+                glBindFramebuffer(GL_FRAMEBUFFER, eyeFbo[eye]);
 
                 glFramebufferTexture2D(
                     GL_FRAMEBUFFER,
@@ -141,30 +140,30 @@ void Engine::run(IGame* game) {
                     0
                 );
 
-                glGenRenderbuffers(1, &depthBuffer);
-                glBindRenderbuffer(GL_RENDERBUFFER, depthBuffer);
-
-                glRenderbufferStorage(
-                    GL_RENDERBUFFER,
-                    GL_DEPTH_COMPONENT24,
-                    static_cast<GLsizei>(xr.getViewWidth(eye)),
-                    static_cast<GLsizei>(xr.getViewHeight(eye))
-                );
+                glBindRenderbuffer(GL_RENDERBUFFER, eyeDepth[eye]);
+                
+                // Allocate depth storage only once per eye (VR resolution doesn't change at runtime)
+                GLint currentWidth = 0;
+                glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &currentWidth);
+                if (currentWidth == 0) {
+                    glRenderbufferStorage(
+                        GL_RENDERBUFFER,
+                        GL_DEPTH_COMPONENT24,
+                        static_cast<GLsizei>(xr.getViewWidth(eye)),
+                        static_cast<GLsizei>(xr.getViewHeight(eye))
+                    );
+                }
 
                 glFramebufferRenderbuffer(
                     GL_FRAMEBUFFER,
                     GL_DEPTH_ATTACHMENT,
                     GL_RENDERBUFFER,
-                    depthBuffer
+                    eyeDepth[eye]
                 );
 
                 if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
                     std::cerr << "[Engine] OpenXR framebuffer incomplete for eye "
                               << eye << "\n";
-
-                    glDeleteFramebuffers(1, &framebuffer);
-                    glDeleteRenderbuffers(1, &depthBuffer);
-
                     xr.releaseView(eye);
                     continue;
                 }
@@ -173,21 +172,18 @@ void Engine::run(IGame* game) {
                     game->getSceneRoot(),
                     view,
                     projection,
-                    framebuffer,
+                    eyeFbo[eye],
                     static_cast<int>(xr.getViewWidth(eye)),
                     static_cast<int>(xr.getViewHeight(eye))
                 );
-
-                glDeleteFramebuffers(1, &framebuffer);
-                glDeleteRenderbuffers(1, &depthBuffer);
 
                 xr.releaseView(eye);
             }
 
             xr.endFrame();
-        } else {
-            RenderSystem::getInstance().render(game->getSceneRoot());
         }
+
+        RenderSystem::getInstance().render(game->getSceneRoot());
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -202,6 +198,10 @@ void Engine::run(IGame* game) {
 
         m_window->swapBuffers();
     }
+
+    // Cleanup cached GL objects on exit
+    glDeleteFramebuffers(2, eyeFbo);
+    glDeleteRenderbuffers(2, eyeDepth);
 
     SceneEditor::getInstance().shutdown();
     PhysicsSystem::getInstance().shutdown();

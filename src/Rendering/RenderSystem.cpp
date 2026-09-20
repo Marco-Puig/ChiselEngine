@@ -2,17 +2,19 @@
 #include "scene/MeshNode.h"
 #include "Platform/PhysicsSystem.h"
 #include "scene/ArcRotateCamera.h"
+#include "rendering/Light.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
 #include <glm/gtc/matrix_transform.hpp>
 #include <stb_image.h>
 
-#include <fstream>
-#include <stdexcept>
+#include <cmath>
 #include <iostream>
 #include <limits>
-#include <cmath>
+#include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -23,10 +25,10 @@ constexpr float kLightDistance = 30.0f;
 
 glm::vec3 computeShadowFocusPosition(const glm::mat4& view) {
     const glm::mat4 invView = glm::inverse(view);
-
     const glm::vec3 cameraPosition = glm::vec3(invView[3]);
 
     glm::vec3 forward = -glm::vec3(invView[2]);
+
     if (glm::length(forward) < 1e-5f) {
         forward = glm::vec3(0.0f, 0.0f, -1.0f);
     } else {
@@ -71,6 +73,7 @@ struct Frustum {
 
         for (auto& plane : frustum.planes) {
             const float length = glm::length(plane.normal);
+
             if (length > 0.0f) {
                 plane.normal /= length;
                 plane.distance /= length;
@@ -101,6 +104,7 @@ struct Frustum {
 
         for (const auto& corner : corners) {
             const glm::vec3 transformed = glm::vec3(worldTransform * glm::vec4(corner, 1.0f));
+
             worldMin = glm::min(worldMin, transformed);
             worldMax = glm::max(worldMax, transformed);
         }
@@ -168,6 +172,7 @@ void main() {
     gl_Position = uProjection * uView * world;
 }
 )glsl",
+
         R"glsl(#version 450 core
 in vec3 vNormal;
 in vec3 vWorldPosition;
@@ -178,9 +183,9 @@ uniform vec3 uLightPosition;
 uniform vec3 uLightDirection;
 uniform vec3 uLightColor;
 uniform vec3 uCameraPosition;
+
 uniform float uLightIntensity;
 uniform float uLightExposure;
-
 uniform int uLightType;
 uniform float uLightRadius;
 
@@ -190,6 +195,7 @@ uniform float uRoughnessFactor;
 
 uniform bool uHasBaseColorTexture;
 uniform sampler2D uBaseColorTexture;
+
 uniform sampler2D uMetallicRoughnessTexture;
 uniform sampler2D uNormalTexture;
 uniform sampler2D uEmissiveTexture;
@@ -213,8 +219,8 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
 
     float currentDepth = projCoords.z;
     float bias = max(0.005 * (1.0 - dot(normal, lightDir)), 0.0005);
-
     float shadow = 0.0;
+
     vec2 texelSize = 1.0 / textureSize(uShadowMap, 0);
 
     for (int x = -1; x <= 1; ++x) {
@@ -279,6 +285,7 @@ void main() {
     vec3 specColor = mix(vec3(1.0), base.rgb, metallic);
 
     float shadow = 0.0;
+
     if (uShadowsEnabled == 1 && uLightType == 0) {
         shadow = ShadowCalculation(vFragPosLightSpace, n, l);
     }
@@ -288,7 +295,6 @@ void main() {
     vec3 specular = specColor * spec * uLightColor * mix(0.04, 0.96, metallic);
 
     vec3 lighting = (ambient + (1.0 - shadow) * (diffuse + specular)) * uLightIntensity * attenuation;
-
     vec3 color = vec3(1.0) - exp(-lighting * exp2(uLightExposure));
 
     if (uHasEmissiveTexture) {
@@ -311,6 +317,7 @@ void main() {
     gl_Position = uProjection * uView * vec4(aPosition, 1.0);
 }
 )glsl",
+
         R"glsl(#version 450 core
 out vec4 FragColor;
 
@@ -339,6 +346,7 @@ void main() {
     gl_Position = p.xyww;
 }
 )glsl",
+
         R"glsl(#version 450 core
 in vec3 vDirection;
 
@@ -402,6 +410,7 @@ void main() {
     gl_Position = uLightSpaceMatrix * uModel * vec4(aPosition, 1.0);
 }
 )glsl",
+
         R"glsl(#version 450 core
 void main() {
 }
@@ -461,6 +470,12 @@ void main() {
 }
 
 void RenderSystem::render(Node* rootNode) {
+    GLFWwindow* window = glfwGetCurrentContext();
+
+    if (window == nullptr) {
+        return;
+    }
+
     const glm::mat4 view = m_desktopCamera != nullptr
         ? m_desktopCamera->getViewMatrix()
         : glm::lookAt(
@@ -476,7 +491,11 @@ void RenderSystem::render(Node* rootNode) {
     int width = 0;
     int height = 0;
 
-    glfwGetFramebufferSize(glfwGetCurrentContext(), &width, &height);
+    glfwGetFramebufferSize(window, &width, &height);
+
+    if (width <= 0 || height <= 0) {
+        return;
+    }
 
     if (shadowsEnabled) {
         updateShadowMap(rootNode, view);
@@ -503,7 +522,6 @@ glm::mat4 RenderSystem::computeDirectionalLightSpaceMatrix(
 
     glm::vec3 up(0.0f, 1.0f, 0.0f);
 
-    // Avoid a degenerate lookAt when the light points straight up/down.
     if (std::abs(glm::dot(lightDirection, up)) > 0.99f) {
         up = glm::vec3(0.0f, 0.0f, 1.0f);
     }
@@ -535,6 +553,7 @@ void RenderSystem::updateShadowMap(Node* rootNode) {
     }
 
     DirectionalLight* light = getDirectionalLight();
+
     if (light == nullptr) {
         return;
     }
@@ -551,6 +570,7 @@ void RenderSystem::updateShadowMap(Node* rootNode, const glm::mat4& view) {
     }
 
     DirectionalLight* light = getDirectionalLight();
+
     if (light == nullptr) {
         return;
     }
@@ -560,6 +580,18 @@ void RenderSystem::updateShadowMap(Node* rootNode, const glm::mat4& view) {
     m_lightSpaceMatrix = computeDirectionalLightSpaceMatrix(focusPosition, light);
     m_hasLightSpaceMatrix = true;
 
+    renderShadowMap(rootNode, light, m_lightSpaceMatrix);
+}
+
+// Implementation of the overloaded renderShadowMap declared in RenderSystem.h
+void RenderSystem::renderShadowMap(Node* rootNode, DirectionalLight* light) {
+    if (!shadowsEnabled || light == nullptr) {
+        return;
+    }
+    
+    m_lightSpaceMatrix = computeDirectionalLightSpaceMatrix(glm::vec3(0.0f), light);
+    m_hasLightSpaceMatrix = true;
+    
     renderShadowMap(rootNode, light, m_lightSpaceMatrix);
 }
 
@@ -578,11 +610,13 @@ void RenderSystem::renderShadowMap(
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
-    glViewport(0, 0, kShadowMapSize, kShadowMapSize);
 
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+
+    glViewport(0, 0, kShadowMapSize, kShadowMapSize);
     glClear(GL_DEPTH_BUFFER_BIT);
 
-    // Small depth bias helper for shadow acne.
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(2.0f, 4.0f);
 
@@ -610,9 +644,19 @@ void RenderSystem::renderView(
     int width,
     int height
 ) {
-    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-    glViewport(0, 0, width, height);
+    if (width <= 0 || height <= 0) {
+        return;
+    }
 
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+
+    if (framebuffer == 0) {
+        glDrawBuffer(GL_BACK);
+    } else {
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    }
+
+    glViewport(0, 0, width, height);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     renderSkybox(view, proj);
@@ -665,11 +709,9 @@ void RenderSystem::renderView(
     m_shader->setVec3("uLightDirection", lightDirection);
     m_shader->setVec3("uLightPosition", lightPosition);
     m_shader->setVec3("uLightColor", lightColor);
-
     m_shader->setFloat("uLightIntensity", lightIntensity);
     m_shader->setFloat("uLightExposure", lightExposure);
     m_shader->setFloat("uLightRadius", lightRadius);
-
     m_shader->setInt("uLightType", lightType);
     m_shader->setMat4("uLightSpaceMatrix", lightSpaceMatrix);
 
@@ -747,7 +789,6 @@ void RenderSystem::renderSkybox(const glm::mat4& view, const glm::mat4& projecti
     glDepthMask(GL_FALSE);
 
     m_skyboxShader->use();
-
     m_skyboxShader->setMat4("uView", view);
     m_skyboxShader->setMat4("uProjection", projection);
     m_skyboxShader->setInt("uEnvironment", 0);
@@ -774,67 +815,62 @@ void RenderSystem::renderCollisionDebug(const glm::mat4& view, const glm::mat4& 
 #if defined(_CPPUNWIND)
     try {
 #endif
+        const std::vector<PhysicsDebugLine> lines = PhysicsSystem::getInstance().getDebugLines();
 
-    const std::vector<PhysicsDebugLine> lines = PhysicsSystem::getInstance().getDebugLines();
+        if (lines.empty()) {
+            return;
+        }
 
-    if (lines.empty()) {
-        return;
-    }
+        if (m_debugShader == nullptr || m_debugVao == 0 || m_debugVbo == 0) {
+            std::cerr << "[Render] Collision debug resources are unavailable\n";
+            return;
+        }
 
-    if (m_debugShader == nullptr || m_debugVao == 0 || m_debugVbo == 0) {
-        std::cerr << "[Render] Collision debug resources are unavailable\n";
-        return;
-    }
+        if (lines.size() > static_cast<size_t>(std::numeric_limits<GLsizei>::max() / 2)) {
+            std::cerr << "[Render] Collision debug geometry is too large; skipping\n";
+            return;
+        }
 
-    if (lines.size() > static_cast<size_t>(std::numeric_limits<GLsizei>::max() / 2)) {
-        std::cerr << "[Render] Collision debug geometry is too large; skipping\n";
-        return;
-    }
-
-    std::vector<glm::vec3> vertices;
-
-#if defined(_CPPUNWIND)
-    try {
-#endif
-
-    vertices.reserve(lines.size() * 2);
-
-    for (const PhysicsDebugLine& line : lines) {
-        vertices.push_back(line.from);
-        vertices.push_back(line.to);
-    }
+        std::vector<glm::vec3> vertices;
 
 #if defined(_CPPUNWIND)
-    } catch (const std::exception& error) {
-        std::cerr << "[Render] Collision debug vertex allocation failed: "
-                  << error.what() << '\n';
-        return;
-    }
+        try {
+#endif
+            vertices.reserve(lines.size() * 2);
+
+            for (const PhysicsDebugLine& line : lines) {
+                vertices.push_back(line.from);
+                vertices.push_back(line.to);
+            }
+#if defined(_CPPUNWIND)
+        } catch (const std::exception& error) {
+            std::cerr << "[Render] Collision debug vertex allocation failed: "
+                      << error.what() << '\n';
+            return;
+        }
 #endif
 
-    m_debugShader->use();
+        m_debugShader->use();
+        m_debugShader->setMat4("uView", view);
+        m_debugShader->setMat4("uProjection", projection);
 
-    m_debugShader->setMat4("uView", view);
-    m_debugShader->setMat4("uProjection", projection);
+        glBindVertexArray(m_debugVao);
+        glBindBuffer(GL_ARRAY_BUFFER, m_debugVbo);
 
-    glBindVertexArray(m_debugVao);
-    glBindBuffer(GL_ARRAY_BUFFER, m_debugVbo);
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            vertices.size() * sizeof(glm::vec3),
+            vertices.data(),
+            GL_DYNAMIC_DRAW
+        );
 
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        vertices.size() * sizeof(glm::vec3),
-        vertices.data(),
-        GL_DYNAMIC_DRAW
-    );
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), nullptr);
+        glEnableVertexAttribArray(0);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), nullptr);
-    glEnableVertexAttribArray(0);
+        glLineWidth(2.0f);
+        glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size()));
 
-    glLineWidth(2.0f);
-    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size()));
-
-    glBindVertexArray(0);
-
+        glBindVertexArray(0);
 #if defined(_CPPUNWIND)
     } catch (const std::exception& error) {
         std::cerr << "[Render] Collision debug skipped after exception: "
@@ -865,7 +901,6 @@ void RenderSystem::traverseAndRender(
             }
 
             m_shadowShader->use();
-
             m_shadowShader->setMat4("uModel", worldTransform);
             m_shadowShader->setMat4("uLightSpaceMatrix", lightSpaceMatrix);
 
@@ -886,8 +921,6 @@ void RenderSystem::traverseAndRender(
                         meshNode->getBoundsMax(),
                         worldTransform
                     )) {
-                    // Skip rendering this mesh node if its bounding box is outside
-                    // the camera frustum, but still traverse children.
                     for (const auto& child : node->getChildren()) {
                         traverseAndRender(child.get(), view, proj, isShadowPass, lightSpaceMatrix);
                     }
