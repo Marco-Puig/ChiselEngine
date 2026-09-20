@@ -199,6 +199,7 @@ floor should eventually use a Jolt triangle-mesh shape instead.
 ## Quick Start
 
 1. **Build**:
+
 **Option A - batch scripts (Windows, recommended):**
 ```
 build.bat
@@ -206,7 +207,7 @@ run.bat
 ```
 
 
-`build.bat` configures and builds the engine. `run.bat` launches the built executable (defaults to Debug; pass `Release` for a release build, e.g. `run.bat Release`). The default project loads `game/game.lua`, which defines the demo scene. \
+`build.bat` configures and builds the engine. `run.bat` launches the built executable (defaults to Debug; pass `Release` for a release build, e.g. `run.bat Release`). The default project loads `game/game.lua`, which defines the demo scene.
 
 **Option B - run the commands yourself:**
 ```powershell
