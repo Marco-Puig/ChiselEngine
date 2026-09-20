@@ -23,7 +23,7 @@ live in the top-level `game/` project folder. Developers normally edit
 keeps the engine reusable while making iteration on a game script fast.
 
 ### VR-First Workflow
-VR development is traditionally slow because of the "Headset Cycle" (Put on headset $\rightarrow$ Test $\rightarrow$ Take off headset $\rightarrow$ Fix code). ChiselEngine breaks this with **VR Simulation Mode**, allowing developers to test movements and logic in a desktop window before deploying to hardware.
+VR development is traditionally slow because of the "Headset Cycle" (Put on headset -> Test -> Take off headset -> Code). ChiselEngine breaks this with **VR Simulation Mode**, allowing developers to test movements and logic in a desktop window before deploying to hardware.
 
 ---
 
@@ -199,6 +199,7 @@ floor should eventually use a Jolt triangle-mesh shape instead.
 ## Quick Start
 
 1. **Build**:
+
 **Option A - batch scripts (Windows, recommended):**
 ```
 build.bat
@@ -207,6 +208,7 @@ run.bat
 
 
 `build.bat` configures and builds the engine. `run.bat` launches the built executable (defaults to Debug; pass `Release` for a release build, e.g. `run.bat Release`). The default project loads `game/game.lua`, which defines the demo scene.
+
 **Option B - run the commands yourself:**
 ```powershell
 Remove-Item -Recurse -Force build
