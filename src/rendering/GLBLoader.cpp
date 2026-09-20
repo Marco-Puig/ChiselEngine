@@ -148,60 +148,38 @@ int materialTexture(const tinygltf::Model& model, int textureIndex,
     return static_cast<int>(createTexture(model.images[imageIndex], srgb));
 }
 
-void collectSceneMeshes(const tinygltf::Model& model, int nodeIndex,
-                        std::vector<int>& meshes) {
-    if (nodeIndex < 0 || nodeIndex >= static_cast<int>(model.nodes.size())) {
-        std::cerr << "GLB scene references invalid node index " << nodeIndex << '\n';
-        return;
-    }
-    const tinygltf::Node& node = model.nodes[nodeIndex];
-    if (node.mesh >= 0)
-        meshes.push_back(node.mesh);
-    for (int child : node.children)
-        collectSceneMeshes(model, child, meshes);
-}
+std::vector<float> readAccessorFloats(const tinygltf::Model& model, int accessorIndex) {
+    std::vector<float> result;
+    if (accessorIndex < 0 || accessorIndex >= static_cast<int>(model.accessors.size()))
+        return result;
+    const tinygltf::Accessor& accessor = model.accessors[accessorIndex];
+    if (accessor.bufferView < 0 || accessor.bufferView >= static_cast<int>(model.bufferViews.size()))
+        return result;
+    const tinygltf::BufferView& view = model.bufferViews[accessor.bufferView];
+    if (view.buffer < 0 || view.buffer >= static_cast<int>(model.buffers.size()))
+        return result;
+    const tinygltf::Buffer& buffer = model.buffers[view.buffer];
+    const size_t stride = accessor.ByteStride(view) != 0 ? accessor.ByteStride(view) : sizeof(float);
+    const size_t start = view.byteOffset + accessor.byteOffset;
+    const unsigned char* data = buffer.data.data() + start;
+    
+    size_t numComponents = 1;
+    if (accessor.type == TINYGLTF_TYPE_VEC2) numComponents = 2;
+    else if (accessor.type == TINYGLTF_TYPE_VEC3) numComponents = 3;
+    else if (accessor.type == TINYGLTF_TYPE_VEC4) numComponents = 4;
+    else if (accessor.type == TINYGLTF_TYPE_MAT4) numComponents = 16;
 
-int findPrimarySceneMesh(const tinygltf::Model& model) {
-    std::vector<int> sceneMeshes;
-    if (model.defaultScene >= 0 &&
-        model.defaultScene < static_cast<int>(model.scenes.size())) {
-        for (int node : model.scenes[model.defaultScene].nodes)
-            collectSceneMeshes(model, node, sceneMeshes);
-    }
-    if (sceneMeshes.empty()) {
-        for (size_t i = 0; i < model.meshes.size(); ++i)
-            sceneMeshes.push_back(static_cast<int>(i));
-        std::cerr << "GLB has no mesh nodes in its default scene; checking all meshes\n";
-    }
-
-    int selected = -1;
-    size_t largestVertexCount = 0;
-    for (int meshIndex : sceneMeshes) {
-        if (meshIndex < 0 || meshIndex >= static_cast<int>(model.meshes.size())) {
-            std::cerr << "GLB scene references invalid mesh index " << meshIndex << '\n';
-            continue;
-        }
-        size_t vertexCount = 0;
-        for (const auto& primitive : model.meshes[meshIndex].primitives) {
-            const auto position = primitive.attributes.find("POSITION");
-            if (position != primitive.attributes.end() &&
-                position->second >= 0 &&
-                position->second < static_cast<int>(model.accessors.size()))
-                vertexCount += model.accessors[position->second].count;
-        }
-        std::cerr << "GLB scene mesh " << meshIndex << " ("
-                  << model.meshes[meshIndex].name << ") has "
-                  << vertexCount << " vertices\n";
-        if (vertexCount > largestVertexCount) {
-            largestVertexCount = vertexCount;
-            selected = meshIndex;
+    for (size_t i = 0; i < accessor.count; ++i) {
+        const float* ptr = reinterpret_cast<const float*>(data + i * stride);
+        for (size_t c = 0; c < numComponents; ++c) {
+            result.push_back(ptr[c]);
         }
     }
-    return selected;
+    return result;
 }
 }
 
-Node* GLBLoader::loadGLB(const std::string& path) {
+MeshNode* GLBLoader::loadGLB(const std::string& path) {
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
     std::string err;
@@ -245,7 +223,10 @@ Node* GLBLoader::loadGLB(const std::string& path) {
         std::cerr << "GLB has no mesh nodes in its default scene; checking all meshes\n";
     }
 
-    auto* root = new Node("GLB_Root:" + path);
+    auto* root = new MeshNode("GLB_Root:" + path);
+
+    // Map node indices to created mesh nodes for animation target resolution
+    std::vector<MeshNode*> createdMeshNodes(model.nodes.size(), nullptr);
 
     for (const auto& instance : sceneInstances) {
         const int meshIndex = instance.mesh;
@@ -405,6 +386,7 @@ Node* GLBLoader::loadGLB(const std::string& path) {
             } else {
                 meshNode->setName("node_" + std::to_string(instance.nodeIndex));
             }
+            createdMeshNodes[instance.nodeIndex] = meshNode;
         }
         
         meshNode->setMesh(vao, vbo, ebo, static_cast<int>(indices.size()), true);
@@ -425,7 +407,6 @@ Node* GLBLoader::loadGLB(const std::string& path) {
         if (sourceMesh.primitives.empty()) {
             std::cerr << "GLB mesh " << meshIndex << " has no primitives\n";
         } else {
-            // Use the material of the first primitive for the MeshNode
             int matIndex = sourceMesh.primitives[0].material;
             if (matIndex >= 0 && matIndex < static_cast<int>(model.materials.size())) {
                 const tinygltf::Material& source = model.materials[matIndex];
@@ -452,7 +433,6 @@ Node* GLBLoader::loadGLB(const std::string& path) {
             }
         }
         root->addChild(std::unique_ptr<MeshNode>(meshNode));
-
     }
 
     return root;

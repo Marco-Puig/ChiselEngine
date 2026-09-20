@@ -5,5 +5,5 @@
 
 class GLBLoader {
 public:
-    static Node* loadGLB(const std::string& path);
+    static MeshNode* loadGLB(const std::string& path);
 };

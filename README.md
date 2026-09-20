@@ -41,9 +41,8 @@ VR development is traditionally slow because of the "Headset Cycle" (Put on head
 
 ## Developer's Guide: Build a game in Lua
 
-Game developers should normally work in `Game/`, not in `src/game/`. The native
-[`Game`](C:/Users/marco/OneDrive/Documents/ChiselEngine/src/game/Game.cpp)
-class only creates the scene/runtime plumbing, loads `Game/game.lua`, and
+Game developers should normally work in `game/`, not in `src/game/`. The native
+`Game` class only creates the scene/runtime plumbing, loads `game/game.lua`, and
 drives its lifecycle. The script is the single game entry point and returns a
 table with these optional callbacks:
 
@@ -59,6 +58,7 @@ function game.onUpdate(deltaTime, scene, animator)
 end
 
 return game
+
 ```
 
 ### Creating a scene
@@ -71,7 +71,6 @@ sun:setColor(1.0, 0.9, 0.8)
 sun:setPosition(0.0, 4.0, 0.0)
 sun:setIntensity(1.0)
 sun:setExposure(0.0)
-sun:setRadius(10.0)
 
 local bulb = scene:createPointLight("Bulb", 2.0, 4.0, 2.0)
 bulb:setColor(1.0, 0.8, 0.4)
@@ -84,6 +83,7 @@ Engine.setSkybox("resources/skybox.jpg")
 local floor = scene:loadMesh("resources/plane.glb", "Floor")
 floor:setPosition(0.0, 0.0, 0.0)
 Engine.addRigidBody(floor, "static", "box", 0.8, 0.0)
+
 ```
 
 `scene:loadMesh(path, name)` loads the asset through the native glTF pipeline,
@@ -104,32 +104,47 @@ node:getPositionZ()
 node:setScale(x, y, z)
 
 local node = scene:findNode("Floor")
+
 ```
 
 Lua does not own scene nodes. The native scene retains ownership and controls
 their lifetime.
 
-### Procedural animation
+### Animation Controls (Procedural & GLB Node Animations)
 
-Register a continuous transform update through the native `Animator`:
+Register a continuous transform update through the native `Animator`. The `procedural` call returns an identifier so you can stop or play it dynamically:
 
 ```lua
-animator:procedural(
+local frogRotationId = animator:procedural(
     frog,
     "y",
     "positive",
     "rotation",
     1.0
 )
+
+-- Stop or resume the procedural animation later
+animator:stopProcedural(frogRotationId)
+animator:playProcedural(frogRotationId)
+
 ```
 
 The axis may be `"x"`, `"y"`, or `"z"`. The direction may be `"positive"` or
 `"negative"`, the type may be `"rotation"` or `"position"`, and the speed is
 expressed in radians or world units per second.
 
+You can also target animations embedded directly in GLB/gltf files attached to nodes:
+
+```lua
+-- Play or stop an embedded model animation by name
+animator:playAnimation(frog, "Idle")
+animator:stopAnimation(frog, "Idle")
+
+```
+
 ### Demo project
 
-The checked-in [`Game/game.lua`](C:/Users/marco/OneDrive/Documents/ChiselEngine/Game/game.lua)
+The checked-in `game/game.lua`
 creates the demo light, skybox, floor, frog mesh, physics bodies, and frog
 rotation entirely from Lua:
 
@@ -143,6 +158,7 @@ function game.onStart(scene, animator)
     Engine.addRigidBody(frog, "dynamic", "convex", 0.6, 0.1)
     animator:procedural(frog, "y", "positive", "rotation", 1.0)
 end
+
 ```
 
 ### Materials, gizmos, and desktop VR input
@@ -181,22 +197,27 @@ floor should eventually use a Jolt triangle-mesh shape instead.
 ---
 
 ## Quick Start
+
 1. **Build**:
+**Option A - batch scripts (Windows, recommended):**
+```
+build.bat
+run.bat
 
-   **Option A - batch scripts (Windows, recommended):**
-   ```
-   build.bat
-   run.bat
-   ```
-   `build.bat` configures and builds the engine. `run.bat` launches the built executable (defaults to Debug; pass `Release` for a release build, e.g. `run.bat Release`). The default project loads `Game/game.lua`, which defines the demo scene.
+```
 
-   **Option B - run the commands yourself:**
-   ```powershell
-   Remove-Item -Recurse -Force build
-   cmake -B build "-DCMAKE_POLICY_VERSION_MINIMUM=3.6"
-   cmake --build build
-   ```
-2. **Run and iterate**: Open the `Scene Editor` window and toggle **Simulated VR** to test without a headset. Edit `Game/game.lua`, rebuild, and run again. OpenXR support is enabled by default; use `-DCHISEL_ENABLE_OPENXR=OFF` for a desktop-only build.
+
+`build.bat` configures and builds the engine. `run.bat` launches the built executable (defaults to Debug; pass `Release` for a release build, e.g. `run.bat Release`). The default project loads `game/game.lua`, which defines the demo scene.
+**Option B - run the commands yourself:**
+```powershell
+Remove-Item -Recurse -Force build
+cmake -B build "-DCMAKE_POLICY_VERSION_MINIMUM=3.6"
+cmake --build build
+
+```
+
+
+2. **Run and iterate**: Open the `Scene Editor` window and toggle **Simulated VR** to test without a headset. Edit `game/game.lua`, rebuild, and run again. OpenXR support is enabled by default; use `-DCHISEL_ENABLE_OPENXR=OFF` for a desktop-only build.
 
 ## Lua gameplay scripts
 
@@ -204,12 +225,12 @@ Gameplay scripts use Lua 5.4 with LuaBridge. The single entry script returns a
 table with optional `onStart(scene, animator)` and
 `onUpdate(deltaTime, scene, animator)`
 functions. The first pass exposes node names, position/scale accessors, scene
-name lookup, and the native `Animator` procedural API. Script code does not own
+name lookup, and the native `Animator` procedural and GLB clip playback APIs. Script code does not own
 scene nodes; native C++ retains ownership and controls their lifetime.
 
 Lua load, syntax, and callback errors are written to the `[Lua]` log channel.
 The current API intentionally focuses on scene construction, transforms,
-animation, lights, skyboxes, and basic rigid-body creation. Input, OpenXR
+animation control, lights, skyboxes, and basic rigid-body creation. Input, OpenXR
 actions, rendering internals, and arbitrary object ownership remain native
 until stable script-facing APIs are defined.
 

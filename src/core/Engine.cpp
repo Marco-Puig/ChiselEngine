@@ -71,13 +71,16 @@ void Engine::run(IGame* game) {
         SceneEditor::getInstance().beginFrame();
         SceneEditor::getInstance().updateGizmo(game->getSceneRoot(), game->getCamera());
         
-        // 1. Process game logic and scripts first
+        // Process game logic and scripts first
         game->update(dt);
         
-        // 2. Sync script/animation transform overrides to Jolt
-        PhysicsSystem::getInstance().syncAnimationDrivenNodes();
+        // Update animations every frame
+        if (game->getAnimator() != nullptr) {
+            game->getAnimator()->update(dt);
+        }
         
-        // 3. Step physics simulation and pull data back to Nodes
+        // Update physics and animation-driven nodes after game logic
+        PhysicsSystem::getInstance().syncAnimationDrivenNodes();
         PhysicsSystem::getInstance().update(dt);
         
         xr.syncActions();

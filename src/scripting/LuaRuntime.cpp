@@ -54,11 +54,11 @@ Node* loadMesh(Scene* scene, const std::string& path,
                const std::string& name) {
     if (scene == nullptr)
         return nullptr;
-    Node* root = GLBLoader::loadGLB(path);
+    MeshNode* root = GLBLoader::loadGLB(path);
     if (root == nullptr)
         return nullptr;
     root->setName(name);
-    return scene->adopt(std::unique_ptr<Node>(root));
+    return scene->adopt(std::unique_ptr<MeshNode>(root));
 }
 
 DirectionalLight* createDirectionalLight(Scene* scene,
@@ -186,6 +186,10 @@ void LuaRuntime::bindEngineApi() {
         .beginClass<Animator>("Animator")
             .addFunction("animateAxis", &Animator::animateAxis)
             .addFunction("procedural", &Animator::proceduralFromLua)
+            .addFunction("playProcedural", &Animator::playProcedural)
+            .addFunction("stopProcedural", &Animator::stopProcedural)
+            .addFunction("playAnimation", &Animator::playAnimation)
+            .addFunction("stopAnimation", &Animator::stopAnimation)
         .endClass()
         .beginClass<Scene>("Scene")
             .addFunction("findNode", &Scene::findByName)
