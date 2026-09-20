@@ -22,28 +22,50 @@ void RenderSystem::init() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glClearColor(0.08f, 0.1f, 0.14f, 1.0f);
+    
     m_shader = std::make_unique<Shader>(
         "#version 450 core\n"
         "layout(location=0) in vec3 aPosition;\n"
         "layout(location=1) in vec3 aNormal;\n"
         "layout(location=2) in vec2 aTexCoord;\n"
-        "uniform mat4 uModel; uniform mat4 uView; uniform mat4 uProjection;\n"
-        "out vec3 vNormal; out vec3 vWorldPosition; out vec2 vTexCoord;\n"
+        "uniform mat4 uModel; uniform mat4 uView; uniform mat4 uProjection; uniform mat4 uLightSpaceMatrix;\n"
+        "out vec3 vNormal; out vec3 vWorldPosition; out vec2 vTexCoord; out vec4 vFragPosLightSpace;\n"
         "void main(){\n"
         "    vec4 world=uModel*vec4(aPosition,1.0);\n"
         "    vWorldPosition=world.xyz;\n"
         "    vNormal=mat3(transpose(inverse(uModel)))*aNormal;\n"
         "    vTexCoord=aTexCoord;\n"
+        "    vFragPosLightSpace = uLightSpaceMatrix * world;\n"
         "    gl_Position=uProjection*uView*world;\n"
         "}",
         "#version 450 core\n"
-        "in vec3 vNormal; in vec3 vWorldPosition; in vec2 vTexCoord;\n"
+        "in vec3 vNormal; in vec3 vWorldPosition; in vec2 vTexCoord; in vec4 vFragPosLightSpace;\n"
         "uniform vec3 uLightPosition; uniform vec3 uLightDirection; uniform vec3 uLightColor; uniform vec3 uCameraPosition; uniform float uLightIntensity; uniform float uLightExposure;\n"
-        "uniform int uLightType; // 0 = Directional, 1 = Point\n"
+        "uniform int uLightType;\n"
         "uniform float uLightRadius;\n"
         "uniform vec4 uBaseColorFactor; uniform float uMetallicFactor; uniform float uRoughnessFactor;\n"
         "uniform bool uHasBaseColorTexture; uniform sampler2D uBaseColorTexture; uniform sampler2D uMetallicRoughnessTexture; uniform sampler2D uNormalTexture; uniform sampler2D uEmissiveTexture;\n"
-        "uniform bool uHasMetallicRoughnessTexture; uniform bool uHasNormalTexture; uniform bool uHasEmissiveTexture; out vec4 FragColor;\n"
+        "uniform bool uHasMetallicRoughnessTexture; uniform bool uHasNormalTexture; uniform bool uHasEmissiveTexture;\n"
+        "uniform int uShadowsEnabled;\n"
+        "uniform sampler2D uShadowMap;\n"
+        "out vec4 FragColor;\n"
+        "float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {\n"
+        "    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;\n"
+        "    projCoords = projCoords * 0.5 + 0.5;\n"
+        "    if(projCoords.z > 1.0) return 0.0;\n"
+        "    float currentDepth = projCoords.z;\n"
+        "    float bias = max(0.005 * (1.0 - dot(normal, lightDir)), 0.0005);\n"
+        "    float shadow = 0.0;\n"
+        "    vec2 texelSize = 1.0 / textureSize(uShadowMap, 0);\n"
+        "    for(int x = -1; x <= 1; ++x) {\n"
+        "        for(int y = -1; y <= 1; ++y) {\n"
+        "            float pcfDepth = texture(uShadowMap, projCoords.xy + vec2(x, y) * texelSize).r;\n"
+        "            shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;\n"
+        "        }\n"
+        "    }\n"
+        "    shadow /= 9.0;\n"
+        "    return shadow;\n"
+        "}\n"
         "void main(){\n"
         "    vec4 base=uBaseColorFactor;\n"
         "    if(uHasBaseColorTexture) base*=texture(uBaseColorTexture,vTexCoord);\n"
@@ -74,14 +96,16 @@ void RenderSystem::init() {
         "    float diff = max(dot(n,l), 0.0);\n"
         "    float spec = pow(max(dot(n,h), 0.0), mix(128.0, 4.0, rough));\n"
         "    vec3 specColor = mix(vec3(1.0), base.rgb, metallic);\n"
+        "    float shadow = (uShadowsEnabled == 1 && uLightType == 0) ? ShadowCalculation(vFragPosLightSpace, n, l) : 0.0;\n"
         "    vec3 ambient = base.rgb * 0.1;\n"
         "    vec3 diffuse = base.rgb * diff * uLightColor;\n"
         "    vec3 specular = specColor * spec * uLightColor * mix(0.04, 0.96, metallic);\n"
-        "    vec3 lighting = (ambient + diffuse + specular) * uLightIntensity * attenuation;\n"
+        "    vec3 lighting = (ambient + (1.0 - shadow) * (diffuse + specular)) * uLightIntensity * attenuation;\n"
         "    vec3 color=vec3(1.0)-exp(-lighting*exp2(uLightExposure));\n"
         "    if(uHasEmissiveTexture) color+=texture(uEmissiveTexture,vTexCoord).rgb;\n"
         "    FragColor=vec4(color,base.a);\n"
-        "}");
+        "}"
+    );
 
     m_debugShader = std::make_unique<Shader>(
         "#version 450 core\nlayout(location=0) in vec3 aPosition;\nuniform mat4 uView;\nuniform mat4 uProjection;\nvoid main(){gl_Position=uProjection*uView*vec4(aPosition,1.0);}",
@@ -107,13 +131,6 @@ void RenderSystem::init() {
     glEnableVertexAttribArray(0);
     glBindVertexArray(0);
 
-    // --- Shadow mapping resources ---
-    // These were previously declared in the header (m_shadowShader, m_shadowFbo,
-    // m_shadowMap) but never actually created here. renderShadowMap()/
-    // traverseAndRender() called m_shadowShader->use() on a null unique_ptr the
-    // moment a directional light existed in the scene, which is a hardware-level
-    // null dereference (surfaces as a raw SEH 0xC0000005 access violation, not a
-    // catchable C++ exception) rather than a graceful failure.
     m_shadowShader = std::make_unique<Shader>(
         "#version 450 core\n"
         "layout(location=0) in vec3 aPosition;\n"
@@ -122,7 +139,7 @@ void RenderSystem::init() {
         "#version 450 core\n"
         "void main(){ }");
 
-    constexpr int kShadowMapSize = 2048;
+    constexpr int kShadowMapSize = 4096;
     glGenTextures(1, &m_shadowMap);
     glBindTexture(GL_TEXTURE_2D, m_shadowMap);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, kShadowMapSize, kShadowMapSize,
@@ -177,7 +194,8 @@ void RenderSystem::renderShadowMap(Node* rootNode, DirectionalLight* light) {
         return;
     }
 
-    glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, 1.0f, 50.0f);
+    // Tighter bounds = higher pixel density on your objects
+    glm::mat4 lightProjection = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 1.0f, 50.0f);
     glm::mat4 lightView = glm::lookAt(
         glm::vec3(0.0f) - light->getDirection() * 20.0f,
         glm::vec3(0.0f),
@@ -186,7 +204,7 @@ void RenderSystem::renderShadowMap(Node* rootNode, DirectionalLight* light) {
     glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
-    glViewport(0, 0, 2048, 2048);
+    glViewport(0, 0, 4096, 4096);
     glClear(GL_DEPTH_BUFFER_BIT);
 
     m_shadowShader->use();
@@ -198,8 +216,8 @@ void RenderSystem::renderShadowMap(Node* rootNode, DirectionalLight* light) {
 }
 
 void RenderSystem::renderView(Node* rootNode, const glm::mat4& view,
-                               const glm::mat4& proj, unsigned int framebuffer,
-                               int width, int height) {
+                             const glm::mat4& proj, unsigned int framebuffer,
+                             int width, int height) {
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glViewport(0, 0, width, height);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -226,7 +244,8 @@ void RenderSystem::renderView(Node* rootNode, const glm::mat4& view,
             lightRadius = directional->getRadius();
             lightType = 0;
             
-            glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, 1.0f, 50.0f);
+            // MUST match renderShadowMap exactly, otherwise shadows won't align
+            glm::mat4 lightProjection = glm::ortho(-5.0f, 5.0f, -5.0f, 5.0f, 1.0f, 50.0f);
             glm::mat4 lightView = glm::lookAt(
                 glm::vec3(0.0f) - lightDirection * 20.0f,
                 glm::vec3(0.0f),
@@ -259,12 +278,11 @@ void RenderSystem::renderView(Node* rootNode, const glm::mat4& view,
     renderCollisionDebug(view, proj);
 }
 
-
 void RenderSystem::renderSkybox(const glm::mat4& view, const glm::mat4& projection) {
     if (m_skyboxTexture == 0 && !m_skyboxPath.empty()) {
         int width = 0, height = 0, channels = 0;
         unsigned char* pixels = stbi_load(m_skyboxPath.c_str(), &width, &height,
-                                          &channels, 3);
+                                         &channels, 3);
         if (pixels == nullptr)
             throw std::runtime_error("Failed to load skybox image: " + m_skyboxPath);
         glGenTextures(1, &m_skyboxTexture);
@@ -363,6 +381,10 @@ void RenderSystem::traverseAndRender(Node* node, const glm::mat4& view, const gl
             m_shadowShader->use();
             m_shadowShader->setMat4("uModel", worldTransform);
             m_shadowShader->setMat4("uLightSpaceMatrix", lightSpaceMatrix);
+            
+            glBindVertexArray(meshNode->getVAO());
+            glDrawElements(GL_TRIANGLES, meshNode->getIndexCount(), GL_UNSIGNED_INT, nullptr);
+            glBindVertexArray(0);
         } else {
             if (frustumCullingEnabled) {
                 // Simplified frustum check: only render if center is roughly in view
@@ -379,7 +401,7 @@ void RenderSystem::traverseAndRender(Node* node, const glm::mat4& view, const gl
             m_shader->setInt("uHasNormalTexture", material.hasNormalTexture() ? 1 : 0);
             m_shader->setInt("uHasEmissiveTexture", material.hasEmissiveTexture() ? 1 : 0);
             const GLuint textures[] = {material.baseColorTexture, material.metallicRoughnessTexture,
-                                        material.normalTexture, material.emissiveTexture};
+                                       material.normalTexture, material.emissiveTexture};
             for (int unit = 0; unit < 4; ++unit) {
                 glActiveTexture(GL_TEXTURE0 + unit);
                 glBindTexture(GL_TEXTURE_2D, textures[unit]);
@@ -390,6 +412,7 @@ void RenderSystem::traverseAndRender(Node* node, const glm::mat4& view, const gl
             m_shader->setInt("uEmissiveTexture", 3);
             glBindVertexArray(meshNode->getVAO());
             glDrawElements(GL_TRIANGLES, meshNode->getIndexCount(), GL_UNSIGNED_INT, nullptr);
+            glBindVertexArray(0);
         }
     }
 

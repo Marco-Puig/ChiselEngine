@@ -1,8 +1,5 @@
 local game = {}
 
-local floorRotationId = -1
-local timeElapsed = 0.0
-
 function game.onStart(scene, animator)
     local light = scene:createDirectionalLight("Sun")
     light:setIntensity(0.4)
@@ -14,7 +11,7 @@ function game.onStart(scene, animator)
     local floor = scene:loadMesh("resources/plane.glb", "Floor")
     floor:setPosition(0.0, 0.0, 0.0)
     Engine.addRigidBody(floor, "static", "convex", 0.8, 0.0)
-    floorRotationId = animator:procedural(floor, "y", "positive", "rotation", 1.0)
+    animator:procedural(floor, "y", "positive", "rotation", 0.1)
 
     local frog = scene:loadMesh("resources/frog.glb", "Frog")
     if frog ~= nil then
@@ -25,7 +22,6 @@ function game.onStart(scene, animator)
 end
 
 function game.onUpdate(deltaTime, scene, animator)
-    timeElapsed = timeElapsed + deltaTime
     local frog = scene:findNode("Frog")
     
     if frog ~= nil then
