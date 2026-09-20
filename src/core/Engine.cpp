@@ -1,5 +1,6 @@
 #include "Engine.h"
 #include "rendering/RenderSystem.h"
+#include "scene/Animator.h"
 #include "platform/SceneEditor.h"
 #include "xr/XRManager.h"
 #include "platform/PhysicsSystem.h"
