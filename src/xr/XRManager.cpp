@@ -543,9 +543,6 @@ glm::vec2 XRManager::getThumbstick(uint32_t controller) const {
     return glm::vec2(0.0f);
 }
 
-// =========================================================================
-// OpenXR Specific Implementations
-// =========================================================================
 #ifdef CHISEL_ENABLE_OPENXR
 
 bool XRManager::check(XrResult result, const char* operation) const {
@@ -766,7 +763,7 @@ bool chiselXrSuggestBindings(
     );
 }
 
-} // namespace
+}
 
 bool XRManager::createActions() {
     m_leftHandPath = chiselXrMakePath(m_instance, "/user/hand/left");
@@ -856,7 +853,6 @@ bool XRManager::createActions() {
     XrActionSuggestedBinding bindings[MAX_BINDINGS];
     uint32_t count = 0;
 
-    // Required fallback profile.
     count = 0;
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftSelectAction, chiselXrMakePath(m_instance, "/user/hand/left/input/select/click"));
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightSelectAction, chiselXrMakePath(m_instance, "/user/hand/right/input/select/click"));
@@ -867,7 +863,7 @@ bool XRManager::createActions() {
         return false;
     }
 
-    // Oculus Touch.
+    // Oculus Touch
     count = 0;
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftSelectAction, chiselXrMakePath(m_instance, "/user/hand/left/input/trigger/value"));
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightSelectAction, chiselXrMakePath(m_instance, "/user/hand/right/input/trigger/value"));
@@ -877,7 +873,7 @@ bool XRManager::createActions() {
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightThumbstickAction, chiselXrMakePath(m_instance, "/user/hand/right/input/thumbstick"));
     chiselXrSuggestBindings(m_instance, "/interaction_profiles/oculus/touch_controller", bindings, count);
 
-    // Valve Index.
+    // Valve Index
     count = 0;
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftSelectAction, chiselXrMakePath(m_instance, "/user/hand/left/input/trigger/value"));
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightSelectAction, chiselXrMakePath(m_instance, "/user/hand/right/input/trigger/value"));
@@ -887,7 +883,7 @@ bool XRManager::createActions() {
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightThumbstickAction, chiselXrMakePath(m_instance, "/user/hand/right/input/thumbstick"));
     chiselXrSuggestBindings(m_instance, "/interaction_profiles/valve/index_controller", bindings, count);
 
-    // Windows Mixed Reality motion controllers.
+    // Windows Mixed Reality motion controllers
     count = 0;
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftSelectAction, chiselXrMakePath(m_instance, "/user/hand/left/input/trigger/value"));
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightSelectAction, chiselXrMakePath(m_instance, "/user/hand/right/input/trigger/value"));
@@ -897,7 +893,7 @@ bool XRManager::createActions() {
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightThumbstickAction, chiselXrMakePath(m_instance, "/user/hand/right/input/thumbstick"));
     chiselXrSuggestBindings(m_instance, "/interaction_profiles/microsoft/motion_controller", bindings, count);
 
-    // HTC Vive controllers use trackpads instead of thumbsticks.
+    // HTC Vive controllers use trackpads instead of thumbsticks
     count = 0;
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftSelectAction, chiselXrMakePath(m_instance, "/user/hand/left/input/trigger/click"));
     chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightSelectAction, chiselXrMakePath(m_instance, "/user/hand/right/input/trigger/click"));

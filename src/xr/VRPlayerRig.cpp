@@ -22,7 +22,6 @@ void VRPlayerRig::update(float dt, const VRInputFrame& input, const glm::mat4& r
     const bool wantSnapLeft = input.snapTurnLeft || turn.x < -stickSnapThreshold;
 
     if (useSnapTurn) {
-        // FIX 2: Independent left/right snap tracking
         if (wantSnapRight && !m_snapTurnRightActive) {
             m_yaw -= snapTurnAngle;
             m_snapTurnRightActive = true;

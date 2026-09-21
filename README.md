@@ -187,24 +187,19 @@ end
 
 ## Quick Start
 
-1. **Build**:
-
-**Option A - batch scripts (Windows, recommended):**
+**Option A - batch scripts:**
 ```
 build.bat
 run.bat
 ```
 
-
-`build.bat` configures and builds the engine. `run.bat` launches the built executable (defaults to Debug; pass `Release` for a release build, e.g. `run.bat Release`). The default project loads `game/game.lua`, which defines the demo scene.
+`build.bat` configures and builds the engine. `run.bat` launches the built executable. Currently is defaulted to Debug. Pass `Release` for a Release build, `run.bat Release`. The default project loads `game/game.lua`, which defines the demo scene.
 
 **Option B - run the commands yourself:**
 ```powershell
 Remove-Item -Recurse -Force build
 cmake -B build "-DCMAKE_POLICY_VERSION_MINIMUM=3.6"
 cmake --build build
-
 ```
+Then run the the ChiselEngine.exe file in `\build\bin\Debug\ChiselEngine.exe`
 
-
-2. **Run and iterate**: Open the `Scene Editor` window and toggle **Simulated VR** to test without a headset. Edit `game/game.lua`, rebuild, and run again. OpenXR support is enabled by default; use `-DCHISEL_ENABLE_OPENXR=OFF` for a desktop-only build.

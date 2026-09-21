@@ -127,7 +127,7 @@ struct Frustum {
     }
 };
 
-} // namespace
+}
 
 DirectionalLight* RenderSystem::getDirectionalLight() const {
     for (Light* light : m_lights) {
@@ -583,7 +583,6 @@ void RenderSystem::updateShadowMap(Node* rootNode, const glm::mat4& view) {
     renderShadowMap(rootNode, light, m_lightSpaceMatrix);
 }
 
-// Implementation of the overloaded renderShadowMap declared in RenderSystem.h
 void RenderSystem::renderShadowMap(Node* rootNode, DirectionalLight* light) {
     if (!shadowsEnabled || light == nullptr) {
         return;
