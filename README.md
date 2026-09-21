@@ -142,6 +142,28 @@ animator:stopAnimation(frog, "Idle")
 
 ```
 
+### VR Player Rig & Locomotion
+ChiselEngine includes a built-in VR Player Rig that handles headset tracking, smooth/snap turning, and thumbstick/gamepad locomotion. The rig decouples the physical headset position from the virtual world, allowing you to move the player without causing VR motion sickness.
+
+You can control and query the VR player's position and comfort settings directly from Lua using the `Engine` namespace:
+
+```lua
+function game.onStart(scene, animator)
+    -- Set initial spawn point and comfort settings
+    Engine.setVRPlayerPosition(0.0, 0.0, 0.0)
+    Engine.setVRPlayerYaw(0.0)
+    Engine.setVRMoveSpeed(2.5)
+    Engine.setVRSnapTurn(true) -- Snap turn is recommended for VR comfort
+end
+
+function game.onUpdate(deltaTime, scene, animator)
+    -- Example: Respawn the player if they fall out of the world
+    if Engine.getVRPlayerPositionY() < -5.0 then
+        Engine.setVRPlayerPosition(0.0, 0.0, 0.0)
+    end
+end
+```
+
 ### Demo project
 
 The checked-in `game/game.lua`

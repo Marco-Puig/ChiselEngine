@@ -8,12 +8,14 @@
 #include "rendering/RenderSystem.h"
 #include "scene/MeshNode.h"
 #include "platform/PhysicsSystem.h"
+#include "xr/VRPlayerRig.h" 
 
 #include <lua.hpp>
 #include <LuaBridge/LuaBridge.h>
 #include <glm/glm.hpp>
 #include <iostream>
 #include <memory>
+
 
 namespace {
 void setPosition(Node* node, float x, float y, float z) {
@@ -147,6 +149,19 @@ void setSkybox(const std::string& path) {
 float getPositionX(Node* node) { return node ? node->getPosition().x : 0.0f; }
 float getPositionY(Node* node) { return node ? node->getPosition().y : 0.0f; }
 float getPositionZ(Node* node) { return node ? node->getPosition().z : 0.0f; }
+
+void setVRPlayerPosition(float x, float y, float z) {
+    VRPlayerRig::getInstance().setPosition(x, y, z);
+}
+float getVRPlayerPositionX() { return VRPlayerRig::getInstance().getPositionX(); }
+float getVRPlayerPositionY() { return VRPlayerRig::getInstance().getPositionY(); }
+float getVRPlayerPositionZ() { return VRPlayerRig::getInstance().getPositionZ(); }
+
+void setVRPlayerYaw(float yaw) { VRPlayerRig::getInstance().setYaw(yaw); }
+float getVRPlayerYaw() { return VRPlayerRig::getInstance().getYaw(); }
+
+void setVRMoveSpeed(float speed) { VRPlayerRig::getInstance().setMoveSpeed(speed); }
+void setVRSnapTurn(bool enabled) { VRPlayerRig::getInstance().setSnapTurn(enabled); }
 }
 
 LuaRuntime::LuaRuntime() = default;
@@ -229,6 +244,14 @@ void LuaRuntime::bindEngineApi() {
         .beginNamespace("Engine")
             .addFunction("addRigidBody", &addRigidBody)
             .addFunction("setSkybox", &setSkybox)
+            .addFunction("setVRPlayerPosition", &setVRPlayerPosition)
+            .addFunction("getVRPlayerPositionX", &getVRPlayerPositionX)
+            .addFunction("getVRPlayerPositionY", &getVRPlayerPositionY)
+            .addFunction("getVRPlayerPositionZ", &getVRPlayerPositionZ)
+            .addFunction("setVRPlayerYaw", &setVRPlayerYaw)
+            .addFunction("getVRPlayerYaw", &getVRPlayerYaw)
+            .addFunction("setVRMoveSpeed", &setVRMoveSpeed)
+            .addFunction("setVRSnapTurn", &setVRSnapTurn)
         .endNamespace();
 }
 

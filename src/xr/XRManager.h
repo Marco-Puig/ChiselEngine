@@ -44,6 +44,7 @@ public:
     glm::mat4 getProjectionMatrix() const { return m_simulationProjection; }
     bool controllerButtonPressed(uint32_t controller, uint32_t button) const;
     XRControllerState getControllerState(uint32_t controller) const;
+    glm::vec2 getThumbstick(uint32_t controller) const;
 
 private:
     XRManager() = default;
@@ -82,6 +83,8 @@ private:
     bool m_frameBegun = false;
     std::array<bool, 2> m_acquired{false, false};
     std::array<uint32_t, 2> m_acquiredImage{0, 0};
+    XrAction m_leftThumbstickAction = XR_NULL_HANDLE;
+    XrAction m_rightThumbstickAction = XR_NULL_HANDLE;
 #endif
 
     std::array<uint32_t, 2> m_viewWidths{0, 0};

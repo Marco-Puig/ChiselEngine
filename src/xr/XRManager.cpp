@@ -102,7 +102,6 @@ bool XRManager::beginFrame() {
     if (!m_running || !m_sessionReady)
         return false;
 
-    // Safety recovery: if a previous frame was left open, try to close it.
     if (m_frameBegun) {
         endFrame();
     }
@@ -496,6 +495,57 @@ XRControllerState XRManager::getControllerState(uint32_t controller) const {
 #endif
 }
 
+glm::vec2 XRManager::getThumbstick(uint32_t controller) const {
+    if (controller > 1)
+        return glm::vec2(0.0f);
+
+    if (isSimulated() && m_simulationWindow != nullptr) {
+        GLFWwindow* window = m_simulationWindow->getHandle();
+
+        auto key = [window](int code) {
+            return glfwGetKey(window, code) == GLFW_PRESS;
+        };
+
+        if (controller == 0) {
+            return glm::vec2(
+                static_cast<float>(key(GLFW_KEY_D) - key(GLFW_KEY_A)),
+                static_cast<float>(key(GLFW_KEY_W) - key(GLFW_KEY_S))
+            );
+        }
+
+        return glm::vec2(
+            static_cast<float>(key(GLFW_KEY_RIGHT) - key(GLFW_KEY_LEFT)),
+            static_cast<float>(key(GLFW_KEY_UP) - key(GLFW_KEY_DOWN))
+        );
+    }
+
+#ifdef CHISEL_ENABLE_OPENXR
+    if (m_session == XR_NULL_HANDLE)
+        return glm::vec2(0.0f);
+
+    const XrAction action =
+        controller == 0 ? m_leftThumbstickAction : m_rightThumbstickAction;
+
+    if (action == XR_NULL_HANDLE)
+        return glm::vec2(0.0f);
+
+    XrActionStateGetInfo getInfo{XR_TYPE_ACTION_STATE_GET_INFO};
+    getInfo.action = action;
+
+    XrActionStateVector2f state{XR_TYPE_ACTION_STATE_VECTOR2F};
+
+    if (xrGetActionStateVector2f(m_session, &getInfo, &state) == XR_SUCCESS &&
+        state.isActive) {
+        return glm::vec2(state.currentState.x, state.currentState.y);
+    }
+#endif
+
+    return glm::vec2(0.0f);
+}
+
+// =========================================================================
+// OpenXR Specific Implementations
+// =========================================================================
 #ifdef CHISEL_ENABLE_OPENXR
 
 bool XRManager::check(XrResult result, const char* operation) const {
@@ -653,17 +703,87 @@ bool XRManager::createSession(Window& window) {
     return true;
 }
 
+namespace {
+
+XrPath chiselXrMakePath(XrInstance instance, const char* pathString) {
+    XrPath path = XR_NULL_PATH;
+
+    if (XR_FAILED(xrStringToPath(instance, pathString, &path))) {
+        return XR_NULL_PATH;
+    }
+
+    return path;
+}
+
+bool chiselXrAddBinding(
+    XrActionSuggestedBinding* bindings,
+    uint32_t& count,
+    uint32_t capacity,
+    XrAction action,
+    XrPath path
+) {
+    if (bindings == nullptr) {
+        return false;
+    }
+
+    if (count >= capacity) {
+        return false;
+    }
+
+    if (action == XR_NULL_HANDLE || path == XR_NULL_PATH) {
+        return false;
+    }
+
+    bindings[count].action = action;
+    bindings[count].binding = path;
+    ++count;
+
+    return true;
+}
+
+bool chiselXrSuggestBindings(
+    XrInstance instance,
+    const char* profileString,
+    const XrActionSuggestedBinding* bindings,
+    uint32_t count
+) {
+    const XrPath profile = chiselXrMakePath(instance, profileString);
+
+    if (profile == XR_NULL_PATH || count == 0 || bindings == nullptr) {
+        return false;
+    }
+
+    XrInteractionProfileSuggestedBinding suggested{
+        XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING
+    };
+
+    suggested.interactionProfile = profile;
+    suggested.countSuggestedBindings = count;
+    suggested.suggestedBindings = bindings;
+
+    return XR_SUCCEEDED(
+        xrSuggestInteractionProfileBindings(instance, &suggested)
+    );
+}
+
+} // namespace
+
 bool XRManager::createActions() {
-    xrStringToPath(m_instance, "/user/hand/left", &m_leftHandPath);
-    xrStringToPath(m_instance, "/user/hand/right", &m_rightHandPath);
+    m_leftHandPath = chiselXrMakePath(m_instance, "/user/hand/left");
+    m_rightHandPath = chiselXrMakePath(m_instance, "/user/hand/right");
+
+    if (m_leftHandPath == XR_NULL_PATH || m_rightHandPath == XR_NULL_PATH) {
+        return false;
+    }
 
     XrActionSetCreateInfo setInfo{XR_TYPE_ACTION_SET_CREATE_INFO};
     std::strcpy(setInfo.actionSetName, "gameplay");
     std::strcpy(setInfo.localizedActionSetName, "Gameplay");
     setInfo.priority = 0;
 
-    if (!check(xrCreateActionSet(m_instance, &setInfo, &m_actionSet), "xrCreateActionSet"))
+    if (!check(xrCreateActionSet(m_instance, &setInfo, &m_actionSet), "xrCreateActionSet")) {
         return false;
+    }
 
     const XrPath subactionPaths[] = {
         m_leftHandPath,
@@ -707,39 +827,85 @@ bool XRManager::createActions() {
         return false;
     }
 
-    XrPath simpleProfile = XR_NULL_PATH;
-    XrPath leftSelectPath = XR_NULL_PATH;
-    XrPath rightSelectPath = XR_NULL_PATH;
-    XrPath leftGripPath = XR_NULL_PATH;
-    XrPath rightGripPath = XR_NULL_PATH;
+    XrActionCreateInfo thumbstickInfo{XR_TYPE_ACTION_CREATE_INFO};
+    thumbstickInfo.actionType = XR_ACTION_TYPE_VECTOR2F_INPUT;
+    thumbstickInfo.countSubactionPaths = 0;
+    thumbstickInfo.subactionPaths = nullptr;
 
-    xrStringToPath(m_instance, "/interaction_profiles/khr/simple_controller", &simpleProfile);
-    xrStringToPath(m_instance, "/user/hand/left/input/select/click", &leftSelectPath);
-    xrStringToPath(m_instance, "/user/hand/right/input/select/click", &rightSelectPath);
-    xrStringToPath(m_instance, "/user/hand/left/input/grip/pose", &leftGripPath);
-    xrStringToPath(m_instance, "/user/hand/right/input/grip/pose", &rightGripPath);
-
-    const XrActionSuggestedBinding bindings[] = {
-        {m_leftSelectAction, leftSelectPath},
-        {m_rightSelectAction, rightSelectPath},
-        {m_handPoseAction, leftGripPath},
-        {m_handPoseAction, rightGripPath}
-    };
-
-    XrInteractionProfileSuggestedBinding suggested{
-        XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING
-    };
-
-    suggested.interactionProfile = simpleProfile;
-    suggested.countSuggestedBindings = 4;
-    suggested.suggestedBindings = bindings;
+    std::strcpy(thumbstickInfo.actionName, "left_thumbstick");
+    std::strcpy(thumbstickInfo.localizedActionName, "Left Thumbstick");
 
     if (!check(
-            xrSuggestInteractionProfileBindings(m_instance, &suggested),
-            "xrSuggestInteractionProfileBindings"
+            xrCreateAction(m_actionSet, &thumbstickInfo, &m_leftThumbstickAction),
+            "xrCreateAction(left_thumbstick)"
         )) {
         return false;
     }
+
+    std::strcpy(thumbstickInfo.actionName, "right_thumbstick");
+    std::strcpy(thumbstickInfo.localizedActionName, "Right Thumbstick");
+
+    if (!check(
+            xrCreateAction(m_actionSet, &thumbstickInfo, &m_rightThumbstickAction),
+            "xrCreateAction(right_thumbstick)"
+        )) {
+        return false;
+    }
+
+    constexpr uint32_t MAX_BINDINGS = 8;
+    XrActionSuggestedBinding bindings[MAX_BINDINGS];
+    uint32_t count = 0;
+
+    // Required fallback profile.
+    count = 0;
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftSelectAction, chiselXrMakePath(m_instance, "/user/hand/left/input/select/click"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightSelectAction, chiselXrMakePath(m_instance, "/user/hand/right/input/select/click"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_handPoseAction, chiselXrMakePath(m_instance, "/user/hand/left/input/grip/pose"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_handPoseAction, chiselXrMakePath(m_instance, "/user/hand/right/input/grip/pose"));
+    if (!chiselXrSuggestBindings(m_instance, "/interaction_profiles/khr/simple_controller", bindings, count)) {
+        std::cerr << "Failed to suggest simple controller bindings.\n";
+        return false;
+    }
+
+    // Oculus Touch.
+    count = 0;
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftSelectAction, chiselXrMakePath(m_instance, "/user/hand/left/input/trigger/value"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightSelectAction, chiselXrMakePath(m_instance, "/user/hand/right/input/trigger/value"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_handPoseAction, chiselXrMakePath(m_instance, "/user/hand/left/input/grip/pose"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_handPoseAction, chiselXrMakePath(m_instance, "/user/hand/right/input/grip/pose"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftThumbstickAction, chiselXrMakePath(m_instance, "/user/hand/left/input/thumbstick"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightThumbstickAction, chiselXrMakePath(m_instance, "/user/hand/right/input/thumbstick"));
+    chiselXrSuggestBindings(m_instance, "/interaction_profiles/oculus/touch_controller", bindings, count);
+
+    // Valve Index.
+    count = 0;
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftSelectAction, chiselXrMakePath(m_instance, "/user/hand/left/input/trigger/value"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightSelectAction, chiselXrMakePath(m_instance, "/user/hand/right/input/trigger/value"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_handPoseAction, chiselXrMakePath(m_instance, "/user/hand/left/input/grip/pose"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_handPoseAction, chiselXrMakePath(m_instance, "/user/hand/right/input/grip/pose"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftThumbstickAction, chiselXrMakePath(m_instance, "/user/hand/left/input/thumbstick"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightThumbstickAction, chiselXrMakePath(m_instance, "/user/hand/right/input/thumbstick"));
+    chiselXrSuggestBindings(m_instance, "/interaction_profiles/valve/index_controller", bindings, count);
+
+    // Windows Mixed Reality motion controllers.
+    count = 0;
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftSelectAction, chiselXrMakePath(m_instance, "/user/hand/left/input/trigger/value"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightSelectAction, chiselXrMakePath(m_instance, "/user/hand/right/input/trigger/value"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_handPoseAction, chiselXrMakePath(m_instance, "/user/hand/left/input/grip/pose"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_handPoseAction, chiselXrMakePath(m_instance, "/user/hand/right/input/grip/pose"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftThumbstickAction, chiselXrMakePath(m_instance, "/user/hand/left/input/thumbstick"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightThumbstickAction, chiselXrMakePath(m_instance, "/user/hand/right/input/thumbstick"));
+    chiselXrSuggestBindings(m_instance, "/interaction_profiles/microsoft/motion_controller", bindings, count);
+
+    // HTC Vive controllers use trackpads instead of thumbsticks.
+    count = 0;
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftSelectAction, chiselXrMakePath(m_instance, "/user/hand/left/input/trigger/click"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightSelectAction, chiselXrMakePath(m_instance, "/user/hand/right/input/trigger/click"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_handPoseAction, chiselXrMakePath(m_instance, "/user/hand/left/input/grip/pose"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_handPoseAction, chiselXrMakePath(m_instance, "/user/hand/right/input/grip/pose"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_leftThumbstickAction, chiselXrMakePath(m_instance, "/user/hand/left/input/trackpad"));
+    chiselXrAddBinding(bindings, count, MAX_BINDINGS, m_rightThumbstickAction, chiselXrMakePath(m_instance, "/user/hand/right/input/trackpad"));
+    chiselXrSuggestBindings(m_instance, "/interaction_profiles/htc/vive_controller", bindings, count);
 
     XrSessionActionSetsAttachInfo attachInfo{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
     attachInfo.countActionSets = 1;
@@ -948,6 +1114,16 @@ void XRManager::destroySessionResources() {
     if (m_handPoseAction != XR_NULL_HANDLE) {
         xrDestroyAction(m_handPoseAction);
         m_handPoseAction = XR_NULL_HANDLE;
+    }
+
+    if (m_leftThumbstickAction != XR_NULL_HANDLE) {
+        xrDestroyAction(m_leftThumbstickAction);
+        m_leftThumbstickAction = XR_NULL_HANDLE;
+    }
+
+    if (m_rightThumbstickAction != XR_NULL_HANDLE) {
+        xrDestroyAction(m_rightThumbstickAction);
+        m_rightThumbstickAction = XR_NULL_HANDLE;
     }
 
     if (m_actionSet != XR_NULL_HANDLE) {

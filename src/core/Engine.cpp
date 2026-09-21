@@ -5,6 +5,8 @@
 #include "xr/XRManager.h"
 #include "platform/PhysicsSystem.h"
 #include "scene/ArcRotateCamera.h"
+#include "xr/VRPlayerRig.h"
+#include "xr/VRInput.h"
 
 #include <glad/glad.h>
 
@@ -53,7 +55,7 @@ LONG WINAPI engineUnhandledException(EXCEPTION_POINTERS* info) noexcept {
     std::abort();
 }
 
-} // namespace
+}
 
 void Engine::init() {
     std::set_terminate(engineTerminate);
@@ -83,11 +85,17 @@ void Engine::run(IGame* game) {
 
     auto lastTime = std::chrono::high_resolution_clock::now();
 
-    // Creating and destroying GL objects every frame will severely impact VR performance.
     GLuint eyeFbo[2] = {0, 0};
     GLuint eyeDepth[2] = {0, 0};
+
     glGenFramebuffers(2, eyeFbo);
     glGenRenderbuffers(2, eyeDepth);
+
+    VRPlayerRig& vrRig = VRPlayerRig::getInstance();
+
+    vrRig.useSnapTurn = true;
+    vrRig.moveSpeed = 2.0f;
+    vrRig.smoothTurnSpeed = 1.8f;
 
     while (!m_window->shouldClose()) {
         auto currentTime = std::chrono::high_resolution_clock::now();
@@ -99,15 +107,12 @@ void Engine::run(IGame* game) {
         SceneEditor::getInstance().beginFrame();
         SceneEditor::getInstance().updateGizmo(game->getSceneRoot(), game->getCamera());
 
-        // Process game logic and scripts first.
         game->update(dt);
 
-        // Update animations every frame.
         if (game->getAnimator() != nullptr) {
             game->getAnimator()->update(dt);
         }
 
-        // Update physics and animation-driven nodes after game logic.
         PhysicsSystem::getInstance().syncAnimationDrivenNodes();
         PhysicsSystem::getInstance().update(dt);
 
@@ -115,18 +120,32 @@ void Engine::run(IGame* game) {
 
         if (xr.beginFrame()) {
             bool shadowMapPrepared = false;
+            bool rigUpdated = false;
 
             for (uint32_t eye = 0; eye < 2; ++eye) {
-                glm::mat4 view;
+                glm::mat4 rawView;
                 glm::mat4 projection;
 
-                if (!xr.acquireView(eye, view, projection)) {
+                if (!xr.acquireView(eye, rawView, projection)) {
                     continue;
                 }
 
-                // Render the directional shadow map once per XR frame.
+                // Update the rig once per XR frame using the first acquired eye view.
+                if (!rigUpdated) {
+                    VRInputFrame input = gatherVRInput(xr);
+                    vrRig.update(dt, input, rawView);
+                    rigUpdated = true;
+                }
+
+                // Apply player movement/yaw to the raw OpenXR eye view.
+                const glm::mat4 finalView = vrRig.applyToView(rawView);
+
                 if (!shadowMapPrepared) {
-                    RenderSystem::getInstance().updateShadowMap(game->getSceneRoot(), view);
+                    RenderSystem::getInstance().updateShadowMap(
+                        game->getSceneRoot(),
+                        finalView
+                    );
+
                     shadowMapPrepared = true;
                 }
 
@@ -141,10 +160,14 @@ void Engine::run(IGame* game) {
                 );
 
                 glBindRenderbuffer(GL_RENDERBUFFER, eyeDepth[eye]);
-                
-                // Allocate depth storage only once per eye (VR resolution doesn't change at runtime)
+
                 GLint currentWidth = 0;
-                glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &currentWidth);
+                glGetRenderbufferParameteriv(
+                    GL_RENDERBUFFER,
+                    GL_RENDERBUFFER_WIDTH,
+                    &currentWidth
+                );
+
                 if (currentWidth == 0) {
                     glRenderbufferStorage(
                         GL_RENDERBUFFER,
@@ -164,13 +187,14 @@ void Engine::run(IGame* game) {
                 if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
                     std::cerr << "[Engine] OpenXR framebuffer incomplete for eye "
                               << eye << "\n";
+
                     xr.releaseView(eye);
                     continue;
                 }
 
                 RenderSystem::getInstance().renderView(
                     game->getSceneRoot(),
-                    view,
+                    finalView,
                     projection,
                     eyeFbo[eye],
                     static_cast<int>(xr.getViewWidth(eye)),
@@ -183,6 +207,7 @@ void Engine::run(IGame* game) {
             xr.endFrame();
         }
 
+        // Keep desktop rendering alive.
         RenderSystem::getInstance().render(game->getSceneRoot());
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -199,7 +224,6 @@ void Engine::run(IGame* game) {
         m_window->swapBuffers();
     }
 
-    // Cleanup cached GL objects on exit
     glDeleteFramebuffers(2, eyeFbo);
     glDeleteRenderbuffers(2, eyeDepth);
 
