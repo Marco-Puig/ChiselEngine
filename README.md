@@ -201,5 +201,5 @@ Remove-Item -Recurse -Force build
 cmake -B build "-DCMAKE_POLICY_VERSION_MINIMUM=3.6"
 cmake --build build
 ```
-Then run the the ChiselEngine.exe file in `\build\bin\Debug\ChiselEngine.exe`
+Then run the ChiselEngine.exe file in `\build\bin\Debug\ChiselEngine.exe`
 
