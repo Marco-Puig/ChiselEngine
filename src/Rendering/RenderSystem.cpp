@@ -1,6 +1,6 @@
 #include "RenderSystem.h"
 #include "scene/MeshNode.h"
-#include "Platform/PhysicsSystem.h"
+#include "platform/PhysicsSystem.h"
 #include "scene/ArcRotateCamera.h"
 #include "rendering/Light.h"
 
@@ -192,17 +192,24 @@ uniform float uLightRadius;
 uniform vec4 uBaseColorFactor;
 uniform float uMetallicFactor;
 uniform float uRoughnessFactor;
+uniform vec3 uEmissiveFactor;
+uniform float uNormalScale;
+uniform float uOcclusionStrength;
 
 uniform bool uHasBaseColorTexture;
 uniform sampler2D uBaseColorTexture;
 
+uniform bool uHasMetallicRoughnessTexture;
 uniform sampler2D uMetallicRoughnessTexture;
+
+uniform bool uHasNormalTexture;
 uniform sampler2D uNormalTexture;
+
+uniform bool uHasEmissiveTexture;
 uniform sampler2D uEmissiveTexture;
 
-uniform bool uHasMetallicRoughnessTexture;
-uniform bool uHasNormalTexture;
-uniform bool uHasEmissiveTexture;
+uniform bool uHasOcclusionTexture;
+uniform sampler2D uOcclusionTexture;
 
 uniform int uShadowsEnabled;
 uniform sampler2D uShadowMap;
@@ -241,6 +248,24 @@ void main() {
         base *= texture(uBaseColorTexture, vTexCoord);
     }
 
+    float metallic = uMetallicFactor;
+    float rough = uRoughnessFactor;
+
+    if (uHasMetallicRoughnessTexture) {
+        vec4 mr = texture(uMetallicRoughnessTexture, vTexCoord);
+        rough *= mr.g;
+        metallic *= mr.b;
+    }
+
+    rough = clamp(rough, 0.04, 1.0);
+    metallic = clamp(metallic, 0.0, 1.0);
+    float ao = 1.0;
+
+    if (uHasOcclusionTexture) {
+        float sampledAO = texture(uOcclusionTexture, vTexCoord).r;
+        ao = mix(1.0, sampledAO, uOcclusionStrength);
+    }
+
     vec3 n = normalize(vNormal);
 
     if (uHasNormalTexture) {
@@ -252,7 +277,10 @@ void main() {
         vec3 t = normalize(dp1 * duv2.y - dp2 * duv1.y);
         vec3 b = normalize(cross(n, t));
 
-        n = normalize(mat3(t, b, n) * (texture(uNormalTexture, vTexCoord).xyz * 2.0 - 1.0));
+        vec3 normalSample = texture(uNormalTexture, vTexCoord).xyz * 2.0 - 1.0;
+        normalSample.xy *= uNormalScale;
+
+        n = normalize(mat3(t, b, n) * normalSample);
     }
 
     vec3 l;
@@ -270,36 +298,36 @@ void main() {
     vec3 v = normalize(uCameraPosition - vWorldPosition);
     vec3 h = normalize(l + v);
 
-    float metallic = uMetallicFactor;
-    float rough = uRoughnessFactor;
-
-    if (uHasMetallicRoughnessTexture) {
-        vec4 mr = texture(uMetallicRoughnessTexture, vTexCoord);
-        rough *= mr.g;
-        metallic *= mr.b;
-    }
-
     float diff = max(dot(n, l), 0.0);
     float spec = pow(max(dot(n, h), 0.0), mix(128.0, 4.0, rough));
 
     vec3 specColor = mix(vec3(1.0), base.rgb, metallic);
-
     float shadow = 0.0;
 
     if (uShadowsEnabled == 1 && uLightType == 0) {
         shadow = ShadowCalculation(vFragPosLightSpace, n, l);
     }
 
-    vec3 ambient = base.rgb * 0.1;
+    vec3 ambient = base.rgb * 0.1 * ao;
     vec3 diffuse = base.rgb * diff * uLightColor;
     vec3 specular = specColor * spec * uLightColor * mix(0.04, 0.96, metallic);
 
-    vec3 lighting = (ambient + (1.0 - shadow) * (diffuse + specular)) * uLightIntensity * attenuation;
+    vec3 lighting =
+        ambient +
+        (1.0 - shadow) * (diffuse + specular);
+
+    lighting *= uLightIntensity * attenuation;
+
     vec3 color = vec3(1.0) - exp(-lighting * exp2(uLightExposure));
+    vec3 emissive = vec3(0.0);
 
     if (uHasEmissiveTexture) {
-        color += texture(uEmissiveTexture, vTexCoord).rgb;
+        emissive = texture(uEmissiveTexture, vTexCoord).rgb * uEmissiveFactor;
+    } else {
+        emissive = uEmissiveFactor;
     }
+
+    color += emissive;
 
     FragColor = vec4(color, base.a);
 }
@@ -587,10 +615,10 @@ void RenderSystem::renderShadowMap(Node* rootNode, DirectionalLight* light) {
     if (!shadowsEnabled || light == nullptr) {
         return;
     }
-    
+
     m_lightSpaceMatrix = computeDirectionalLightSpaceMatrix(glm::vec3(0.0f), light);
     m_hasLightSpaceMatrix = true;
-    
+
     renderShadowMap(rootNode, light, m_lightSpaceMatrix);
 }
 
@@ -723,7 +751,7 @@ void RenderSystem::renderView(
     m_shader->setInt("uShadowsEnabled", useShadows ? 1 : 0);
 
     glActiveTexture(GL_TEXTURE4);
-    glBindTexture(GL_TEXTURE_2D, m_shadowMap);
+    glBindTexture(GL_TEXTURE_2D, useShadows ? m_shadowMap : 0);
     m_shader->setInt("uShadowMap", 4);
 
     m_shader->setVec3("uCameraPosition", glm::vec3(glm::inverse(view)[3]));
@@ -781,6 +809,11 @@ void RenderSystem::renderSkybox(const glm::mat4& view, const glm::mat4& projecti
     }
 
     if (m_skyboxTexture == 0) {
+        return;
+    }
+
+    if (m_skyboxShader == nullptr) {
+        std::cerr << "[Render] Skybox shader is unavailable\n";
         return;
     }
 
@@ -891,9 +924,16 @@ void RenderSystem::traverseAndRender(
         return;
     }
 
-    const glm::mat4 worldTransform = node->getWorldTransform();
-
     if (MeshNode* meshNode = dynamic_cast<MeshNode*>(node)) {
+        if (meshNode->getVAO() == 0 || meshNode->getIndexCount() <= 0) {
+            for (const auto& child : node->getChildren()) {
+                traverseAndRender(child.get(), view, proj, isShadowPass, lightSpaceMatrix);
+            }
+            return;
+        }
+
+        const glm::mat4 worldTransform = node->getWorldTransform();
+
         if (isShadowPass) {
             if (m_shadowShader == nullptr) {
                 return;
@@ -936,28 +976,32 @@ void RenderSystem::traverseAndRender(
             m_shader->setVec4("uBaseColorFactor", material.baseColorFactor);
             m_shader->setFloat("uMetallicFactor", material.metallicFactor);
             m_shader->setFloat("uRoughnessFactor", material.roughnessFactor);
-
+            m_shader->setVec3("uEmissiveFactor", material.emissiveFactor);
+            m_shader->setFloat("uNormalScale", material.normalScale);
+            m_shader->setFloat("uOcclusionStrength", material.occlusionStrength);
             m_shader->setInt("uHasBaseColorTexture", material.hasBaseColorTexture() ? 1 : 0);
             m_shader->setInt("uHasMetallicRoughnessTexture", material.hasMetallicRoughnessTexture() ? 1 : 0);
             m_shader->setInt("uHasNormalTexture", material.hasNormalTexture() ? 1 : 0);
             m_shader->setInt("uHasEmissiveTexture", material.hasEmissiveTexture() ? 1 : 0);
+            m_shader->setInt("uHasOcclusionTexture", material.hasOcclusionTexture() ? 1 : 0);
 
-            const GLuint textures[] = {
-                material.baseColorTexture,
-                material.metallicRoughnessTexture,
-                material.normalTexture,
-                material.emissiveTexture
+            auto bindMaterialTexture = [](unsigned int texture, int unit) {
+                glActiveTexture(GL_TEXTURE0 + unit);
+                glBindTexture(GL_TEXTURE_2D, texture);
             };
 
-            for (int unit = 0; unit < 4; ++unit) {
-                glActiveTexture(GL_TEXTURE0 + unit);
-                glBindTexture(GL_TEXTURE_2D, textures[unit]);
-            }
+            bindMaterialTexture(material.baseColorTexture, 0);
+            bindMaterialTexture(material.metallicRoughnessTexture, 1);
+            bindMaterialTexture(material.normalTexture, 2);
+            bindMaterialTexture(material.emissiveTexture, 3);
+            bindMaterialTexture(material.occlusionTexture, 5);
 
             m_shader->setInt("uBaseColorTexture", 0);
             m_shader->setInt("uMetallicRoughnessTexture", 1);
             m_shader->setInt("uNormalTexture", 2);
             m_shader->setInt("uEmissiveTexture", 3);
+            m_shader->setInt("uShadowMap", 4);
+            m_shader->setInt("uOcclusionTexture", 5);
 
             glBindVertexArray(meshNode->getVAO());
             glDrawElements(

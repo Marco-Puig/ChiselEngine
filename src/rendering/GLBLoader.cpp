@@ -150,30 +150,72 @@ int materialTexture(const tinygltf::Model& model, int textureIndex,
 
 Material loadMaterial(const tinygltf::Model& model, int matIndex) {
     Material material;
-    if (matIndex < 0 || matIndex >= static_cast<int>(model.materials.size()))
+
+    if (matIndex < 0 || matIndex >= static_cast<int>(model.materials.size())) {
         return material;
+    }
 
     const tinygltf::Material& source = model.materials[matIndex];
     const auto& pbr = source.pbrMetallicRoughness;
-    material.baseColorFactor = glm::vec4(
-        static_cast<float>(pbr.baseColorFactor[0]),
-        static_cast<float>(pbr.baseColorFactor[1]),
-        static_cast<float>(pbr.baseColorFactor[2]),
-        static_cast<float>(pbr.baseColorFactor[3]));
+
+    if (pbr.baseColorFactor.size() >= 4) {
+        material.baseColorFactor = glm::vec4(
+            static_cast<float>(pbr.baseColorFactor[0]),
+            static_cast<float>(pbr.baseColorFactor[1]),
+            static_cast<float>(pbr.baseColorFactor[2]),
+            static_cast<float>(pbr.baseColorFactor[3])
+        );
+    } else {
+        material.baseColorFactor = glm::vec4(1.0f);
+    }
+
+    if (pbr.baseColorTexture.index >= 0) {
+        material.baseColorTexture = materialTexture(model, pbr.baseColorTexture.index, true);
+    }
+
     material.metallicFactor = static_cast<float>(pbr.metallicFactor);
     material.roughnessFactor = static_cast<float>(pbr.roughnessFactor);
-    
-    if (pbr.baseColorTexture.index >= 0)
-        material.baseColorTexture = materialTexture(model, pbr.baseColorTexture.index, true);
-    if (pbr.metallicRoughnessTexture.index >= 0)
-        material.metallicRoughnessTexture = materialTexture(model, pbr.metallicRoughnessTexture.index, false);
-    if (source.normalTexture.index >= 0)
-        material.normalTexture = materialTexture(model, source.normalTexture.index, false);
-    if (source.emissiveTexture.index >= 0)
-        material.emissiveTexture = materialTexture(model, source.emissiveTexture.index, true);
 
-    std::cout << "[GLB] Loaded Material [" << source.name << "] BaseColorTex ID: " << material.baseColorTexture 
-              << " Factor: (" << material.baseColorFactor.r << ", " << material.baseColorFactor.g << ", " << material.baseColorFactor.b << ")\n";
+    if (pbr.metallicRoughnessTexture.index >= 0) {
+        material.metallicRoughnessTexture = materialTexture(model, pbr.metallicRoughnessTexture.index, false);
+    }
+
+    if (source.normalTexture.index >= 0) {
+        material.normalTexture = materialTexture(model, source.normalTexture.index, false);
+        material.normalScale = static_cast<float>(source.normalTexture.scale);
+    }
+
+    if (source.occlusionTexture.index >= 0) {
+        material.occlusionTexture = materialTexture(model, source.occlusionTexture.index, false);
+        material.occlusionStrength = static_cast<float>(source.occlusionTexture.strength);
+    }
+
+    if (source.emissiveTexture.index >= 0) {
+        material.emissiveTexture = materialTexture(model, source.emissiveTexture.index, true);
+    }
+
+    if (source.emissiveFactor.size() >= 3) {
+        material.emissiveFactor = glm::vec3(
+            static_cast<float>(source.emissiveFactor[0]),
+            static_cast<float>(source.emissiveFactor[1]),
+            static_cast<float>(source.emissiveFactor[2])
+        );
+    } else {
+        material.emissiveFactor = material.hasEmissiveTexture() ? glm::vec3(1.0f) : glm::vec3(0.0f);
+    }
+
+    std::cout << "[GLB] Loaded Material [" << source.name << "]\n"
+              << "  BaseColorTex:      " << material.baseColorTexture << "\n"
+              << "  MetallicRoughTex:  " << material.metallicRoughnessTexture << "\n"
+              << "  NormalTex:         " << material.normalTexture << "\n"
+              << "  OcclusionTex:      " << material.occlusionTexture << "\n"
+              << "  EmissiveTex:       " << material.emissiveTexture << "\n"
+              << "  BaseColorFactor:   (" << material.baseColorFactor.r << ", " << material.baseColorFactor.g << ", " << material.baseColorFactor.b << ", " << material.baseColorFactor.a << ")\n"
+              << "  MetallicFactor:    " << material.metallicFactor << "\n"
+              << "  RoughnessFactor:   " << material.roughnessFactor << "\n"
+              << "  NormalScale:       " << material.normalScale << "\n"
+              << "  OcclusionStrength: " << material.occlusionStrength << "\n"
+              << "  EmissiveFactor:    (" << material.emissiveFactor.r << ", " << material.emissiveFactor.g << ", " << material.emissiveFactor.b << ")\n";
 
     return material;
 }
@@ -225,6 +267,11 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
 
     auto* root = new MeshNode("GLB_Root:" + path);
 
+    std::vector<glm::vec3> rootCollisionVertices;
+    glm::vec3 rootBoundsMin(std::numeric_limits<float>::max());
+    glm::vec3 rootBoundsMax(std::numeric_limits<float>::lowest());
+    bool hasRootBounds = false;
+
     for (const auto& instance : sceneInstances) {
         const int meshIndex = instance.mesh;
         if (meshIndex < 0 || meshIndex >= static_cast<int>(model.meshes.size())) {
@@ -258,7 +305,15 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
         for (const glm::vec3& point : readPositions) {
             const glm::vec3 transformed = glm::vec3(worldTransform * glm::vec4(point, 1.0f));
             subCollisionVertices.push_back(transformed);
+            rootCollisionVertices.push_back(transformed);
+            rootBoundsMin = glm::min(rootBoundsMin, transformed);
+            rootBoundsMax = glm::max(rootBoundsMax, transformed);
         }
+
+        if (!subCollisionVertices.empty()) {
+            hasRootBounds = true;
+        }
+
         meshNode->setCollisionVertices(std::move(subCollisionVertices));
 
         for (size_t p = 0; p < sourceMesh.primitives.size(); ++p) {
@@ -393,6 +448,15 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
 
         root->addChild(std::unique_ptr<MeshNode>(meshNode));
     }
+
+    if (hasRootBounds) {
+        root->setBounds(rootBoundsMin, rootBoundsMax);
+        root->setCollisionVertices(std::move(rootCollisionVertices));
+    } else {
+        root->setBounds(glm::vec3(0.0f), glm::vec3(0.0f));
+    }
+
+    return root;
 
     return root;
 }
