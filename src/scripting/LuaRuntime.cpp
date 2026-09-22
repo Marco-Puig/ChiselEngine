@@ -242,7 +242,6 @@ void LuaRuntime::bindEngineApi() {
         .endClass();
     luabridge::getGlobalNamespace(m_state)
         .beginNamespace("Engine")
-            .addFunction("addRigidBody", &addRigidBody)
             .addFunction("setSkybox", &setSkybox)
             .addFunction("setVRPlayerPosition", &setVRPlayerPosition)
             .addFunction("getVRPlayerPositionX", &getVRPlayerPositionX)
@@ -253,6 +252,10 @@ void LuaRuntime::bindEngineApi() {
             .addFunction("setVRMoveSpeed", &setVRMoveSpeed)
             .addFunction("setVRSnapTurn", &setVRSnapTurn)
         .endNamespace();
+    luabridge::getGlobalNamespace(m_state)
+    .beginNamespace("Physics")
+        .addFunction("addRigidBody", &addRigidBody)
+    .endNamespace();
 }
 
 bool LuaRuntime::loadGameScript(const std::string& path) {

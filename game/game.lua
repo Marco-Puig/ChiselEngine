@@ -10,13 +10,13 @@ function game.onStart(scene, animator)
 
     local floor = scene:loadMesh("resources/plane.glb", "Floor")
     floor:setPosition(0.0, 0.0, 0.0)
-    Engine.addRigidBody(floor, "static", "convex", 0.8, 0.0)
+    Physics.addRigidBody(floor, "static", "convex", 0.8, 0.0)
     animator:procedural(floor, "y", "positive", "rotation", 0.1)
 
     local frog = scene:loadMesh("resources/frog.glb", "Frog")
     if frog ~= nil then
         frog:setPosition(0.0, 3.0, 0.0)
-        Engine.addRigidBody(frog, "dynamic", "convex", 0.6, 0.1)
+        Physics.addRigidBody(frog, "dynamic", "convex", 0.6, 0.1)
         
     end
 end

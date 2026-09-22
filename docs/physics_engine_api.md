@@ -6,7 +6,7 @@ The `Engine` namespace provides rigid body creation, collision settings, and env
 
 ## Namespace Functions
 
-### 1. `Engine.addRigidBody(node, type, collider, friction, restitution)`
+### 1. `Physics.addRigidBody(node, type, collider, friction, restitution)`
 Converts a standard 3D mesh node into a physics-simulated rigid body.
 
 * **Parameters:**
