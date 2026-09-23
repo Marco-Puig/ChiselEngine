@@ -9,6 +9,7 @@
 #include "scene/MeshNode.h"
 #include "platform/PhysicsSystem.h"
 #include "xr/VRPlayerRig.h" 
+#include "scene/DestructibleBuildingNode.h"
 
 #include <lua.hpp>
 #include <LuaBridge/LuaBridge.h>
@@ -162,6 +163,89 @@ float getVRPlayerYaw() { return VRPlayerRig::getInstance().getYaw(); }
 
 void setVRMoveSpeed(float speed) { VRPlayerRig::getInstance().setMoveSpeed(speed); }
 void setVRSnapTurn(bool enabled) { VRPlayerRig::getInstance().setSnapTurn(enabled); }
+
+Node* createDestructibleBuilding(
+    Scene* scene,
+    const std::string& name,
+    float x,
+    float y,
+    float z,
+    float height,
+    float health
+) {
+    if (scene == nullptr) {
+        return nullptr;
+    }
+    const glm::vec3 size(1.0f, glm::max(0.1f, height), 1.0f);
+    auto building = std::make_unique<DestructibleBuildingNode>(
+        name,
+        scene,
+        size,
+        health
+    );
+    building->setPosition(glm::vec3(x, y, z));
+    DestructibleBuildingNode* result = building.get();
+    std::unique_ptr<MeshNode> asMesh(building.release());
+    scene->adopt(std::move(asMesh));
+    return result;
+}
+
+void nodeApplyDamage(Node* node, float amount) {
+    if (node == nullptr) {
+        return;
+    }
+
+    if (auto* building = dynamic_cast<DestructibleBuildingNode*>(node)) {
+        building->applyDamage(amount);
+    }
+}
+
+void nodeDestroy(Node* node) {
+    if (node == nullptr) {
+        return;
+    }
+
+    if (auto* building = dynamic_cast<DestructibleBuildingNode*>(node)) {
+        building->destroy();
+    }
+}
+
+float nodeGetHealth(Node* node) {
+    if (node == nullptr) {
+        return 0.0f;
+    }
+
+    if (auto* building = dynamic_cast<DestructibleBuildingNode*>(node)) {
+        return building->getHealth();
+    }
+
+    return 0.0f;
+}
+
+float nodeGetMaxHealth(Node* node) {
+    if (node == nullptr) {
+        return 0.0f;
+    }
+
+    if (auto* building = dynamic_cast<DestructibleBuildingNode*>(node)) {
+        return building->getMaxHealth();
+    }
+
+    return 0.0f;
+}
+
+bool nodeIsDestroyed(Node* node) {
+    if (node == nullptr) {
+        return false;
+    }
+
+    if (auto* building = dynamic_cast<DestructibleBuildingNode*>(node)) {
+        return building->isDestroyed();
+    }
+
+    return false;
+}
+
 }
 
 LuaRuntime::LuaRuntime() = default;
@@ -211,6 +295,7 @@ void LuaRuntime::bindEngineApi() {
             .addFunction("loadMesh", &loadMesh)
             .addFunction("createDirectionalLight", &createDirectionalLight)
             .addFunction("createPointLight", &createPointLight)
+            .addFunction("createDestructibleBuilding", &createDestructibleBuilding)
         .endClass();
     luabridge::getGlobalNamespace(m_state)
         .beginClass<Node>("Node")
@@ -223,6 +308,11 @@ void LuaRuntime::bindEngineApi() {
             .addFunction("setScale", &setScale)
             .addFunction("addForce", &addForce)
             .addFunction("setLinearVelocity", &setLinearVelocity)
+            .addFunction("applyDamage", &nodeApplyDamage)
+            .addFunction("destroy", &nodeDestroy)
+            .addFunction("getHealth", &nodeGetHealth)
+            .addFunction("getMaxHealth", &nodeGetMaxHealth)
+            .addFunction("isDestroyed", &nodeIsDestroyed)
         .endClass()
         .beginClass<Light>("Light")
             .addFunction("setColor", &setLightColorBase)
