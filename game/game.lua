@@ -70,7 +70,8 @@ function game.onUpdate(deltaTime, scene, animator)
         -- Fully destroy the tower after 15 seconds.
         if elapsedTime > 15.0 then
             tryApplyDamage(tower, 9999.0)
-            Audio.playSound("resources/sounds/test.wav", 0.1)
+            -- WARNING: LOUD
+            -- Audio.playSound("resources/sounds/test.wav", 0.1)
         end
 
         -- Damage the tower when the frog is close to it.
