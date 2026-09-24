@@ -7,6 +7,7 @@
 #include "rendering/Light.h"
 #include "rendering/RenderSystem.h"
 #include "scene/MeshNode.h"
+#include "audio/Audio.h"
 #include "platform/PhysicsSystem.h"
 #include "xr/VRPlayerRig.h" 
 #include "scene/DestructibleBuildingNode.h"
@@ -246,6 +247,26 @@ bool nodeIsDestroyed(Node* node) {
     return false;
 }
 
+void audioPlaySound(const std::string& path) {
+    AudioSystem::getInstance().playSound(path, false, 1.0f);
+}
+
+void audioPlaySoundLoop(const std::string& path) {
+    AudioSystem::getInstance().playSound(path, true, 1.0f);
+}
+
+void audioPlayMusic(const std::string& path) {
+    AudioSystem::getInstance().playMusic(path, true, 0.8f);
+}
+
+void audioStopMusic() {
+    AudioSystem::getInstance().stopMusic();
+}
+
+void audioStopAllSounds() {
+    AudioSystem::getInstance().stopAllSounds();
+}
+
 }
 
 LuaRuntime::LuaRuntime() = default;
@@ -341,6 +362,14 @@ void LuaRuntime::bindEngineApi() {
             .addFunction("getVRPlayerYaw", &getVRPlayerYaw)
             .addFunction("setVRMoveSpeed", &setVRMoveSpeed)
             .addFunction("setVRSnapTurn", &setVRSnapTurn)
+        .endNamespace();
+    luabridge::getGlobalNamespace(m_state)
+        .beginNamespace("Audio")
+            .addFunction("playSound", &audioPlaySound)
+            .addFunction("playSoundLoop", &audioPlaySoundLoop)
+            .addFunction("playMusic", &audioPlayMusic)
+            .addFunction("stopMusic", &audioStopMusic)
+            .addFunction("stopAllSounds", &audioStopAllSounds)
         .endNamespace();
     luabridge::getGlobalNamespace(m_state)
     .beginNamespace("Physics")

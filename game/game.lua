@@ -20,14 +20,14 @@ function game.onStart(scene, animator)
     light:setColor(1.0, 0.9, 0.8)
     light:setPosition(0.0, 4.0, 0.0)
 
-    Engine.setSkybox("resources/skybox.jpg")
+    Engine.setSkybox("resources/graphics/skybox.jpg")
 
     local floor = scene:loadMesh("resources/plane.glb", "Floor")
     floor:setPosition(0.0, 0.0, 0.0)
     Physics.addRigidBody(floor, "static", "convex", 0.8, 0.0)
     animator:procedural(floor, "y", "positive", "rotation", 0.1)
 
-    local frog = scene:loadMesh("resources/frog.glb", "Frog")
+    local frog = scene:loadMesh("resources/models/frog.glb", "Frog")
     if frog ~= nil then
         frog:setPosition(0.0, 3.0, 0.0)
         Physics.addRigidBody(frog, "dynamic", "convex", 0.6, 0.1)
@@ -70,6 +70,7 @@ function game.onUpdate(deltaTime, scene, animator)
         -- Fully destroy the tower after 15 seconds.
         if elapsedTime > 15.0 then
             tryApplyDamage(tower, 9999.0)
+            Audio.playSound("resources/sounds/test.wav", 0.1)
         end
 
         -- Damage the tower when the frog is close to it.

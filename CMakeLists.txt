@@ -78,6 +78,14 @@ FetchContent_Declare(stb
     EXCLUDE_FROM_ALL
 )
 
+FetchContent_Declare(miniaudio
+    GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+    GIT_TAG        0.11.21
+    GIT_SHALLOW    TRUE
+    SYSTEM
+    EXCLUDE_FROM_ALL
+)
+
 if(CHISEL_ENABLE_LUA)
     FetchContent_Declare(lua
         URL https://www.lua.org/ftp/lua-5.4.7.tar.gz
@@ -118,7 +126,7 @@ if(CHISEL_ENABLE_JOLT)
     )
 endif()
 
-FetchContent_MakeAvailable(glfw glm glad tinygltf imgui imguizmo stb)
+FetchContent_MakeAvailable(glfw glm glad tinygltf imgui imguizmo stb miniaudio)
 
 if(CHISEL_ENABLE_LUA)
     FetchContent_MakeAvailable(lua luabridge)
@@ -199,6 +207,7 @@ target_include_directories(ChiselEngine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${imguizmo_SOURCE_DIR}/src
     ${stb_SOURCE_DIR}
+    ${miniaudio_SOURCE_DIR}
 )
 if(CHISEL_ENABLE_LUA)
     target_include_directories(ChiselEngine PRIVATE ${luabridge_SOURCE_DIR}/Source)
@@ -236,6 +245,15 @@ target_link_libraries(ChiselEngine PRIVATE
     imgui_backend
     imguizmo_backend
 )
+
+if(WIN32)
+    target_link_libraries(ChiselEngine PRIVATE winmm ole32 user32)
+elseif(UNIX AND NOT APPLE)
+    target_link_libraries(ChiselEngine PRIVATE pthread dl m)
+elseif(APPLE)
+    target_link_libraries(ChiselEngine PRIVATE "-framework CoreFoundation" "-framework CoreAudio" "-framework AudioToolbox")
+endif()
+
 if(CHISEL_ENABLE_LUA)
     target_link_libraries(ChiselEngine PRIVATE lua)
     target_compile_definitions(ChiselEngine PRIVATE CHISEL_ENABLE_LUA)

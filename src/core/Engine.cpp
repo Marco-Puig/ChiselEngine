@@ -1,5 +1,6 @@
 #include "Engine.h"
 #include "rendering/RenderSystem.h"
+#include "audio/Audio.h"
 #include "scene/Animator.h"
 #include "platform/SceneEditor.h"
 #include "xr/XRManager.h"
@@ -64,12 +65,16 @@ void Engine::init() {
     SetUnhandledExceptionFilter(engineUnhandledException);
 #endif
 
-    m_window = std::make_unique<Window>(1600, 900, "ChiselEngine");
+    m_window = std::make_unique<Window>(1600, 900, "Chisel Engine");
 
     RenderSystem::getInstance().init();
     XRManager::getInstance().init(*m_window);
     PhysicsSystem::getInstance().init();
     SceneEditor::getInstance().init(*m_window);
+
+    if (!AudioSystem::getInstance().init()) {
+        std::cerr << "[Engine] Audio unavailable; continuing without sound\n";
+    }
 }
 
 void Engine::run(IGame* game) {
@@ -103,7 +108,7 @@ void Engine::run(IGame* game) {
         lastTime = currentTime;
 
         m_window->pollEvents();
-
+        AudioSystem::getInstance().update();
         SceneEditor::getInstance().beginFrame();
         SceneEditor::getInstance().updateGizmo(game->getSceneRoot(), game->getCamera());
 
@@ -229,5 +234,6 @@ void Engine::run(IGame* game) {
 
     SceneEditor::getInstance().shutdown();
     PhysicsSystem::getInstance().shutdown();
+    AudioSystem::getInstance().shutdown();
     xr.shutdown();
 }
