@@ -52,7 +52,6 @@ void SceneEditor::init(Window& window) {
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    // Prevent stale ImGui layout entries from reopening old developer windows.
     ImGui::GetIO().IniFilename = nullptr;
     ImGui::StyleColorsDark();
     const std::string fontPath = "resources/Roboto-Regular.ttf";
@@ -297,8 +296,11 @@ void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
             if (ImGui::Checkbox("Shadows", &RenderSystem::getInstance().shadowsEnabled)) {
                 // Shadows enabled/disabled
             }
-            if (ImGui::Checkbox("Frustum Culling", &RenderSystem::getInstance().frustumCullingEnabled)) {
+            if (ImGui::Checkbox("Culling", &RenderSystem::getInstance().frustumCullingEnabled)) {
                 // Culling enabled/disabled
+            }
+            if (ImGui::Checkbox("FXAA", &RenderSystem::getInstance().fxaaEnabled)) {
+                // FXAA enabled/disabled
             }
             if (DirectionalLight* light = dynamic_cast<DirectionalLight*>(m_selectedNode)) {
                 float intensity = light->getIntensity();

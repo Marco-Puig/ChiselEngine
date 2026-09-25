@@ -3,23 +3,32 @@
 #include "scene/Animator.h"
 #include "scene/Node.h"
 #include "scene/Scene.h"
+
 #include "rendering/GLBLoader.h"
 #include "rendering/Light.h"
 #include "rendering/RenderSystem.h"
+
 #include "scene/MeshNode.h"
+#include "scene/DestructibleBuildingNode.h"
+
+#include "scene/ParticleSystem.h"
+#include "scene/FireParticleSystem.h"
+#include "scene/SmokeParticleSystem.h"
+
 #include "audio/Audio.h"
 #include "platform/PhysicsSystem.h"
-#include "xr/VRPlayerRig.h" 
-#include "scene/DestructibleBuildingNode.h"
+#include "xr/VRPlayerRig.h"
 
 #include <lua.hpp>
 #include <LuaBridge/LuaBridge.h>
+
 #include <glm/glm.hpp>
+
 #include <iostream>
 #include <memory>
 
-
 namespace {
+
 void setPosition(Node* node, float x, float y, float z) {
     if (node != nullptr) {
         node->setPosition(glm::vec3(x, y, z));
@@ -40,55 +49,39 @@ void setLinearVelocity(Node* node, float x, float y, float z) {
 }
 
 void setScale(Node* node, float x, float y, float z) {
-    if (node != nullptr)
+    if (node != nullptr) {
         node->setScale(glm::vec3(x, y, z));
+    }
+}
+
+float getPositionX(Node* node) {
+    return node != nullptr ? node->getPosition().x : 0.0f;
+}
+
+float getPositionY(Node* node) {
+    return node != nullptr ? node->getPosition().y : 0.0f;
+}
+
+float getPositionZ(Node* node) {
+    return node != nullptr ? node->getPosition().z : 0.0f;
 }
 
 void setLightPosition(DirectionalLight* light, float x, float y, float z) {
-    if (light != nullptr)
+    if (light != nullptr) {
         light->setPosition(glm::vec3(x, y, z));
+    }
 }
 
 void setLightColorBase(Light* light, float r, float g, float b) {
-    if (light != nullptr)
+    if (light != nullptr) {
         light->setColor(glm::vec3(r, g, b));
-}
-
-Node* loadMesh(Scene* scene, const std::string& path,
-               const std::string& name) {
-    if (scene == nullptr)
-        return nullptr;
-    MeshNode* root = GLBLoader::loadGLB(path);
-    if (root == nullptr)
-        return nullptr;
-    root->setName(name);
-    return scene->adopt(std::unique_ptr<MeshNode>(root));
-}
-
-DirectionalLight* createDirectionalLight(Scene* scene,
-                                           const std::string& name) {
-    if (scene == nullptr)
-        return nullptr;
-    auto light = std::make_unique<DirectionalLight>(
-        name, glm::vec3(-0.2f, -1.0f, -0.3f));
-    DirectionalLight* result = light.get();
-    scene->adopt(std::move(light));
-    RenderSystem::getInstance().addLight(result);
-    return result;
-}
-
-PointLight* createPointLight(Scene* scene, const std::string& name, float x, float y, float z) {
-    if (scene == nullptr) return nullptr;
-    auto light = std::make_unique<PointLight>(name, glm::vec3(x, y, z));
-    PointLight* result = light.get();
-    scene->adopt(std::move(light));
-    RenderSystem::getInstance().addLight(result);
-    return result;
+    }
 }
 
 void setPointLightPosition(PointLight* light, float x, float y, float z) {
-    if (light != nullptr)
+    if (light != nullptr) {
         light->setPosition(glm::vec3(x, y, z));
+    }
 }
 
 void setDirLightColor(DirectionalLight* light, float r, float g, float b) {
@@ -100,70 +93,176 @@ void setPointLightColor(PointLight* light, float r, float g, float b) {
 }
 
 void setDirIntensity(DirectionalLight* light, float intensity) {
-    light->setIntensity(intensity);
+    if (light != nullptr) {
+        light->setIntensity(intensity);
+    }
 }
 
 void setDirExposure(DirectionalLight* light, float exposure) {
-    light->setExposure(exposure);
+    if (light != nullptr) {
+        light->setExposure(exposure);
+    }
 }
 
 void setPointIntensity(PointLight* light, float intensity) {
-    light->setIntensity(intensity);
+    if (light != nullptr) {
+        light->setIntensity(intensity);
+    }
 }
 
 void setPointExposure(PointLight* light, float exposure) {
-    light->setExposure(exposure);
+    if (light != nullptr) {
+        light->setExposure(exposure);
+    }
 }
 
 void setPointRadius(PointLight* light, float radius) {
-    light->setRadius(radius);
+    if (light != nullptr) {
+        light->setRadius(radius);
+    }
 }
 
+Node* loadMesh(
+    Scene* scene,
+    const std::string& path,
+    const std::string& name
+) {
+    if (scene == nullptr) {
+        return nullptr;
+    }
 
-bool addRigidBody(Node* node, const std::string& type,
-                   const std::string& collider,
-                   float friction, float restitution) {
-    if (node == nullptr)
+    MeshNode* root = GLBLoader::loadGLB(path);
+
+    if (root == nullptr) {
+        return nullptr;
+    }
+
+    root->setName(name);
+
+    return scene->adopt(std::unique_ptr<MeshNode>(root));
+}
+
+DirectionalLight* createDirectionalLight(
+    Scene* scene,
+    const std::string& name
+) {
+    if (scene == nullptr) {
+        return nullptr;
+    }
+
+    auto light = std::make_unique<DirectionalLight>(
+        name,
+        glm::vec3(-0.2f, -1.0f, -0.3f)
+    );
+
+    DirectionalLight* result = light.get();
+
+    scene->adopt(std::move(light));
+    RenderSystem::getInstance().addLight(result);
+
+    return result;
+}
+
+PointLight* createPointLight(
+    Scene* scene,
+    const std::string& name,
+    float x,
+    float y,
+    float z
+) {
+    if (scene == nullptr) {
+        return nullptr;
+    }
+
+    auto light = std::make_unique<PointLight>(
+        name,
+        glm::vec3(x, y, z)
+    );
+
+    PointLight* result = light.get();
+
+    scene->adopt(std::move(light));
+    RenderSystem::getInstance().addLight(result);
+
+    return result;
+}
+
+bool addRigidBody(
+    Node* node,
+    const std::string& type,
+    const std::string& collider,
+    float friction,
+    float restitution
+) {
+    if (node == nullptr) {
         return false;
+    }
+
     auto* mesh = dynamic_cast<MeshNode*>(node);
-    if (mesh == nullptr)
-        return false;
-    BodyType bodyType = BodyType::Static;
-    if (type == "dynamic")
-        bodyType = BodyType::Dynamic;
-    else if (type == "kinematic")
-        bodyType = BodyType::Kinematic;
-    
-    ColliderType colliderType = ColliderType::Box;
-    if (collider == "convex")
-        colliderType = ColliderType::Convex;
-        
-    return PhysicsSystem::getInstance().createRigidBody(
-        node, bodyType, glm::max(mesh->getBoundsSize(), glm::vec3(0.01f)),
-        colliderType, friction, restitution) != nullptr;
-}
 
+    if (mesh == nullptr) {
+        return false;
+    }
+
+    BodyType bodyType = BodyType::Static;
+
+    if (type == "dynamic") {
+        bodyType = BodyType::Dynamic;
+    } else if (type == "kinematic") {
+        bodyType = BodyType::Kinematic;
+    }
+
+    ColliderType colliderType = ColliderType::Box;
+
+    if (collider == "convex") {
+        colliderType = ColliderType::Convex;
+    }
+
+    return PhysicsSystem::getInstance().createRigidBody(
+        node,
+        bodyType,
+        glm::max(mesh->getBoundsSize(), glm::vec3(0.01f)),
+        colliderType,
+        friction,
+        restitution
+    ) != nullptr;
+}
 
 void setSkybox(const std::string& path) {
     RenderSystem::getInstance().setSkyboxPath(path);
 }
 
-float getPositionX(Node* node) { return node ? node->getPosition().x : 0.0f; }
-float getPositionY(Node* node) { return node ? node->getPosition().y : 0.0f; }
-float getPositionZ(Node* node) { return node ? node->getPosition().z : 0.0f; }
-
 void setVRPlayerPosition(float x, float y, float z) {
     VRPlayerRig::getInstance().setPosition(x, y, z);
 }
-float getVRPlayerPositionX() { return VRPlayerRig::getInstance().getPositionX(); }
-float getVRPlayerPositionY() { return VRPlayerRig::getInstance().getPositionY(); }
-float getVRPlayerPositionZ() { return VRPlayerRig::getInstance().getPositionZ(); }
 
-void setVRPlayerYaw(float yaw) { VRPlayerRig::getInstance().setYaw(yaw); }
-float getVRPlayerYaw() { return VRPlayerRig::getInstance().getYaw(); }
+float getVRPlayerPositionX() {
+    return VRPlayerRig::getInstance().getPositionX();
+}
 
-void setVRMoveSpeed(float speed) { VRPlayerRig::getInstance().setMoveSpeed(speed); }
-void setVRSnapTurn(bool enabled) { VRPlayerRig::getInstance().setSnapTurn(enabled); }
+float getVRPlayerPositionY() {
+    return VRPlayerRig::getInstance().getPositionY();
+}
+
+float getVRPlayerPositionZ() {
+    return VRPlayerRig::getInstance().getPositionZ();
+}
+
+void setVRPlayerYaw(float yaw) {
+    VRPlayerRig::getInstance().setYaw(yaw);
+}
+
+float getVRPlayerYaw() {
+    return VRPlayerRig::getInstance().getYaw();
+}
+
+void setVRMoveSpeed(float speed) {
+    VRPlayerRig::getInstance().setMoveSpeed(speed);
+}
+
+void setVRSnapTurn(bool enabled) {
+    VRPlayerRig::getInstance().setSnapTurn(enabled);
+}
 
 Node* createDestructibleBuilding(
     Scene* scene,
@@ -177,17 +276,27 @@ Node* createDestructibleBuilding(
     if (scene == nullptr) {
         return nullptr;
     }
-    const glm::vec3 size(1.0f, glm::max(0.1f, height), 1.0f);
+
+    const glm::vec3 size(
+        1.0f,
+        glm::max(0.1f, height),
+        1.0f
+    );
+
     auto building = std::make_unique<DestructibleBuildingNode>(
         name,
         scene,
         size,
         health
     );
+
     building->setPosition(glm::vec3(x, y, z));
+
     DestructibleBuildingNode* result = building.get();
+
     std::unique_ptr<MeshNode> asMesh(building.release());
     scene->adopt(std::move(asMesh));
+
     return result;
 }
 
@@ -267,6 +376,100 @@ void audioStopAllSounds() {
     AudioSystem::getInstance().stopAllSounds();
 }
 
+Node* createFire(
+    Scene* scene,
+    const std::string& name,
+    float x,
+    float y,
+    float z
+) {
+    if (scene == nullptr) {
+        return nullptr;
+    }
+
+    auto fire = std::make_unique<FireParticleSystem>(name);
+    fire->setPosition(glm::vec3(x, y, z));
+
+    Node* result = fire.get();
+
+    scene->adopt(std::move(fire));
+
+    return result;
+}
+
+Node* createSmoke(
+    Scene* scene,
+    const std::string& name,
+    float x,
+    float y,
+    float z
+) {
+    if (scene == nullptr) {
+        return nullptr;
+    }
+
+    auto smoke = std::make_unique<SmokeParticleSystem>(name);
+    smoke->setPosition(glm::vec3(x, y, z));
+
+    Node* result = smoke.get();
+
+    scene->adopt(std::move(smoke));
+
+    return result;
+}
+
+void nodePlayParticles(Node* node) {
+    if (node == nullptr) {
+        return;
+    }
+
+    if (auto* particleSystem = dynamic_cast<ParticleSystem*>(node)) {
+        particleSystem->play();
+    }
+}
+
+void nodeStopParticles(Node* node) {
+    if (node == nullptr) {
+        return;
+    }
+
+    if (auto* particleSystem = dynamic_cast<ParticleSystem*>(node)) {
+        particleSystem->stop();
+    }
+}
+
+void nodeClearParticles(Node* node) {
+    if (node == nullptr) {
+        return;
+    }
+
+    if (auto* particleSystem = dynamic_cast<ParticleSystem*>(node)) {
+        particleSystem->clear();
+    }
+}
+
+void nodeSetParticleEmissionRate(Node* node, float rate) {
+    if (node == nullptr) {
+        return;
+    }
+
+    if (auto* particleSystem = dynamic_cast<ParticleSystem*>(node)) {
+        particleSystem->setEmissionRate(rate);
+    }
+}
+
+bool nodeIsParticleSystemPlaying(Node* node) {
+    if (node == nullptr) {
+        return false;
+    }
+
+    if (auto* particleSystem = dynamic_cast<ParticleSystem*>(node)) {
+        return particleSystem->isPlaying();
+    }
+
+    return false;
+}
+
 }
 
 LuaRuntime::LuaRuntime() = default;
@@ -276,17 +479,21 @@ LuaRuntime::~LuaRuntime() {
 }
 
 bool LuaRuntime::initialize() {
-    if (m_state != nullptr)
+    if (m_state != nullptr) {
         return true;
+    }
 
     m_state = luaL_newstate();
+
     if (m_state == nullptr) {
         std::cerr << "[Lua] Failed to create Lua state\n";
         return false;
     }
 
     luaL_openlibs(m_state);
+
     bindEngineApi();
+
     return true;
 }
 
@@ -296,6 +503,7 @@ void LuaRuntime::shutdown() {
         lua_close(m_state);
         m_state = nullptr;
     }
+
     m_scene = nullptr;
     m_animator = nullptr;
     m_started = false;
@@ -311,13 +519,17 @@ void LuaRuntime::bindEngineApi() {
             .addFunction("playAnimation", &Animator::playAnimation)
             .addFunction("stopAnimation", &Animator::stopAnimation)
         .endClass()
+
         .beginClass<Scene>("Scene")
             .addFunction("findNode", &Scene::findByName)
             .addFunction("loadMesh", &loadMesh)
             .addFunction("createDirectionalLight", &createDirectionalLight)
             .addFunction("createPointLight", &createPointLight)
             .addFunction("createDestructibleBuilding", &createDestructibleBuilding)
+            .addFunction("createFire", &createFire)
+            .addFunction("createSmoke", &createSmoke)
         .endClass();
+
     luabridge::getGlobalNamespace(m_state)
         .beginClass<Node>("Node")
             .addFunction("getName", &Node::getName)
@@ -334,16 +546,24 @@ void LuaRuntime::bindEngineApi() {
             .addFunction("getHealth", &nodeGetHealth)
             .addFunction("getMaxHealth", &nodeGetMaxHealth)
             .addFunction("isDestroyed", &nodeIsDestroyed)
+            .addFunction("playParticles", &nodePlayParticles)
+            .addFunction("stopParticles", &nodeStopParticles)
+            .addFunction("clearParticles", &nodeClearParticles)
+            .addFunction("setParticleEmissionRate", &nodeSetParticleEmissionRate)
+            .addFunction("isParticleSystemPlaying", &nodeIsParticleSystemPlaying)
         .endClass()
+
         .beginClass<Light>("Light")
             .addFunction("setColor", &setLightColorBase)
         .endClass()
+
         .beginClass<DirectionalLight>("DirectionalLight")
             .addFunction("setPosition", &setLightPosition)
             .addFunction("setColor", &setDirLightColor)
             .addFunction("setIntensity", &setDirIntensity)
             .addFunction("setExposure", &setDirExposure)
         .endClass()
+
         .beginClass<PointLight>("PointLight")
             .addFunction("setPosition", &setPointLightPosition)
             .addFunction("setColor", &setPointLightColor)
@@ -351,18 +571,23 @@ void LuaRuntime::bindEngineApi() {
             .addFunction("setExposure", &setPointExposure)
             .addFunction("setRadius", &setPointRadius)
         .endClass();
+
     luabridge::getGlobalNamespace(m_state)
         .beginNamespace("Engine")
             .addFunction("setSkybox", &setSkybox)
+
             .addFunction("setVRPlayerPosition", &setVRPlayerPosition)
             .addFunction("getVRPlayerPositionX", &getVRPlayerPositionX)
             .addFunction("getVRPlayerPositionY", &getVRPlayerPositionY)
             .addFunction("getVRPlayerPositionZ", &getVRPlayerPositionZ)
+
             .addFunction("setVRPlayerYaw", &setVRPlayerYaw)
             .addFunction("getVRPlayerYaw", &getVRPlayerYaw)
+
             .addFunction("setVRMoveSpeed", &setVRMoveSpeed)
             .addFunction("setVRSnapTurn", &setVRSnapTurn)
         .endNamespace();
+
     luabridge::getGlobalNamespace(m_state)
         .beginNamespace("Audio")
             .addFunction("playSound", &audioPlaySound)
@@ -371,10 +596,11 @@ void LuaRuntime::bindEngineApi() {
             .addFunction("stopMusic", &audioStopMusic)
             .addFunction("stopAllSounds", &audioStopAllSounds)
         .endNamespace();
+
     luabridge::getGlobalNamespace(m_state)
-    .beginNamespace("Physics")
-        .addFunction("addRigidBody", &addRigidBody)
-    .endNamespace();
+        .beginNamespace("Physics")
+            .addFunction("addRigidBody", &addRigidBody)
+        .endNamespace();
 }
 
 bool LuaRuntime::loadGameScript(const std::string& path) {
@@ -390,6 +616,7 @@ bool LuaRuntime::loadGameScript(const std::string& path) {
         lua_pop(m_state, 1);
         return false;
     }
+
     if (lua_pcall(m_state, 0, 1, 0) != LUA_OK) {
         std::cerr << "[Lua] Startup error in '" << path << "': "
                   << lua_tostring(m_state, -1) << '\n';
@@ -405,22 +632,32 @@ bool LuaRuntime::loadGameScript(const std::string& path) {
     }
 
     m_gameScript = std::make_unique<luabridge::LuaRef>(
-        luabridge::LuaRef::fromStack(m_state, -1));
+        luabridge::LuaRef::fromStack(m_state, -1)
+    );
+
     lua_pop(m_state, 1);
+
     m_scriptPath = path;
     m_started = false;
+
     return true;
 }
 
 void LuaRuntime::startGame(Scene& scene, Animator& animator) {
-    if (m_started || !m_gameScript)
+    if (m_started || !m_gameScript) {
         return;
+    }
+
     m_scene = &scene;
     m_animator = &animator;
+
     try {
         luabridge::LuaRef callback = (*m_gameScript)["onStart"];
-        if (callback.isFunction())
+
+        if (callback.isFunction()) {
             callback(&scene, &animator);
+        }
+
         m_started = true;
     } catch (const std::exception& error) {
         std::cerr << "[Lua] onStart error in '" << m_scriptPath << "': "
@@ -430,12 +667,16 @@ void LuaRuntime::startGame(Scene& scene, Animator& animator) {
 
 void LuaRuntime::updateGame(float deltaTime) {
     if (!m_started || !m_gameScript || m_scene == nullptr ||
-        m_animator == nullptr)
+        m_animator == nullptr) {
         return;
+    }
+
     try {
         luabridge::LuaRef callback = (*m_gameScript)["onUpdate"];
-        if (callback.isFunction())
+
+        if (callback.isFunction()) {
             callback(deltaTime, m_scene, m_animator);
+        }
     } catch (const std::exception& error) {
         std::cerr << "[Lua] onUpdate error in '" << m_scriptPath << "': "
                   << error.what() << '\n';

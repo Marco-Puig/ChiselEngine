@@ -2,6 +2,7 @@
 #include "rendering/RenderSystem.h"
 #include "audio/Audio.h"
 #include "scene/Animator.h"
+#include "scene/ParticleSystem.h"
 #include "platform/SceneEditor.h"
 #include "xr/XRManager.h"
 #include "platform/PhysicsSystem.h"
@@ -10,6 +11,7 @@
 #include "xr/VRInput.h"
 
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
 
 #include <chrono>
 #include <exception>
@@ -120,7 +122,7 @@ void Engine::run(IGame* game) {
 
         PhysicsSystem::getInstance().syncAnimationDrivenNodes();
         PhysicsSystem::getInstance().update(dt);
-
+        updateParticleSystems(game->getSceneRoot(), dt);
         xr.syncActions();
 
         if (xr.beginFrame()) {
@@ -135,14 +137,12 @@ void Engine::run(IGame* game) {
                     continue;
                 }
 
-                // Update the rig once per XR frame using the first acquired eye view.
                 if (!rigUpdated) {
                     VRInputFrame input = gatherVRInput(xr);
                     vrRig.update(dt, input, rawView);
                     rigUpdated = true;
                 }
 
-                // Apply player movement/yaw to the raw OpenXR eye view.
                 const glm::mat4 finalView = vrRig.applyToView(rawView);
 
                 if (!shadowMapPrepared) {
@@ -205,15 +205,52 @@ void Engine::run(IGame* game) {
                     static_cast<int>(xr.getViewWidth(eye)),
                     static_cast<int>(xr.getViewHeight(eye))
                 );
+                
+                renderParticleSystems(game->getSceneRoot(), finalView, projection);
 
+                if (RenderSystem::getInstance().fxaaEnabled) {
+                    RenderSystem::getInstance().applyFXAA(
+                        eyeFbo[eye],
+                        eyeFbo[eye],
+                        static_cast<int>(xr.getViewWidth(eye)),
+                        static_cast<int>(xr.getViewHeight(eye))
+                    );
+                }
                 xr.releaseView(eye);
             }
 
             xr.endFrame();
         }
 
-        // Keep desktop rendering alive.
         RenderSystem::getInstance().render(game->getSceneRoot());
+
+        if (game->getCamera() != nullptr) {
+            renderParticleSystems(
+                game->getSceneRoot(),
+                game->getCamera()->getViewMatrix(),
+                game->getCamera()->getProjectionMatrix()
+            );
+        }
+
+        if (RenderSystem::getInstance().fxaaEnabled) {
+            int framebufferWidth = 0;
+            int framebufferHeight = 0;
+
+            glfwGetFramebufferSize(
+                m_window->getHandle(),
+                &framebufferWidth,
+                &framebufferHeight
+            );
+
+            if (framebufferWidth > 0 && framebufferHeight > 0) {
+                RenderSystem::getInstance().applyFXAA(
+                    0,
+                    0,
+                    framebufferWidth,
+                    framebufferHeight
+                );
+            }
+        }
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

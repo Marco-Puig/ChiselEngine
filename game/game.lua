@@ -47,6 +47,22 @@ function game.onStart(scene, animator)
             Physics.addRigidBody(tower, "static", "box", 0.8, 0.0)
         end
     end
+
+    if scene.createFire ~= nil then
+        local fire = scene:createFire("Fire", 0.0, 0.25, -2.0)
+
+        if fire ~= nil then
+            fire:setParticleEmissionRate(140.0)
+        end
+    end
+
+    if scene.createSmoke ~= nil then
+        local smoke = scene:createSmoke("Smoke", 0.0, 1.25, -2.0)
+
+        if smoke ~= nil then
+            smoke:setParticleEmissionRate(30.0)
+        end
+    end
 end
 
 function game.onUpdate(deltaTime, scene, animator)
@@ -83,6 +99,19 @@ function game.onUpdate(deltaTime, scene, animator)
 
             if distanceSquared < 2.5 then
                 tryApplyDamage(tower, 20.0 * deltaTime)
+            end
+        end
+
+        -- Particle System Demo
+        if elapsedTime > 30.0 then
+            local fire = scene:findNode("Fire")
+            if fire ~= nil and fire.stopParticles ~= nil then
+                fire:stopParticles()
+            end
+
+            local smoke = scene:findNode("Smoke")
+            if smoke ~= nil and smoke.stopParticles ~= nil then
+                smoke:stopParticles()
             end
         end
     end

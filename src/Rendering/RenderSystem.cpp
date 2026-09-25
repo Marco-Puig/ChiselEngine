@@ -139,6 +139,87 @@ DirectionalLight* RenderSystem::getDirectionalLight() const {
     return nullptr;
 }
 
+namespace {
+
+const char* fxaaVertexShaderSource = R"glsl(#version 450 core
+out vec2 vUv;
+
+void main() {
+    vec2 vertex = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+
+    vUv = vertex;
+
+    gl_Position = vec4(vertex * 2.0 - 1.0, 0.0, 1.0);
+}
+)glsl";
+
+const char* fxaaFragmentShaderSource = R"glsl(#version 450 core
+in vec2 vUv;
+
+uniform sampler2D uTexture;
+uniform float uTexelWidth;
+uniform float uTexelHeight;
+
+out vec4 FragColor;
+
+float luma(vec3 color) {
+    return dot(color, vec3(0.299, 0.587, 0.114));
+}
+
+void main() {
+    vec2 texel = vec2(uTexelWidth, uTexelHeight);
+
+    float lumaNW = luma(texture(uTexture, vUv + vec2(-1.0, -1.0) * texel).rgb);
+    float lumaNE = luma(texture(uTexture, vUv + vec2( 1.0, -1.0) * texel).rgb);
+    float lumaSW = luma(texture(uTexture, vUv + vec2(-1.0,  1.0) * texel).rgb);
+    float lumaSE = luma(texture(uTexture, vUv + vec2( 1.0,  1.0) * texel).rgb);
+    float lumaM  = luma(texture(uTexture, vUv).rgb);
+
+    float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+    float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+
+    vec2 dir;
+    dir.x = -((lumaNW + lumaNE) - (lumaSW + lumaSE));
+    dir.y =  ((lumaNW + lumaSW) - (lumaNE + lumaSE));
+
+    const float fxaaReduceMin = 1.0 / 128.0;
+    const float fxaaReduceMul = 1.0 / 8.0;
+    const float fxaaSpanMax = 8.0;
+
+    float dirReduce = max(
+        (lumaNW + lumaNE + lumaSW + lumaSE) * fxaaReduceMul,
+        fxaaReduceMin
+    );
+
+    float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+
+    dir = min(
+        vec2(fxaaSpanMax),
+        max(vec2(-fxaaSpanMax), dir * rcpDirMin)
+    ) * texel;
+
+    vec3 rgbA = 0.5 * (
+        texture(uTexture, vUv + dir * (1.0 / 3.0 - 0.5)).rgb +
+        texture(uTexture, vUv + dir * (2.0 / 3.0 - 0.5)).rgb
+    );
+
+    vec3 rgbB = rgbA * 0.5 + 0.25 * (
+        texture(uTexture, vUv + dir * -0.5).rgb +
+        texture(uTexture, vUv + dir *  0.5).rgb
+    );
+
+    float lumaB = luma(rgbB);
+
+    if (lumaB < lumaMin || lumaB > lumaMax) {
+        FragColor = vec4(rgbA, 1.0);
+    } else {
+        FragColor = vec4(rgbB, 1.0);
+    }
+}
+)glsl";
+
+}
+
 void RenderSystem::init() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
@@ -495,6 +576,13 @@ void main() {
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    m_fxaaShader = std::make_unique<Shader>(
+        fxaaVertexShaderSource,
+        fxaaFragmentShaderSource
+    );
+
+    glGenVertexArrays(1, &m_fxaaVao);
 }
 
 void RenderSystem::render(Node* rootNode) {
@@ -1017,4 +1105,184 @@ void RenderSystem::traverseAndRender(
     for (const auto& child : node->getChildren()) {
         traverseAndRender(child.get(), view, proj, isShadowPass, lightSpaceMatrix);
     }
+}
+
+void RenderSystem::ensureFXAAResources(int width, int height) {
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+
+    if (m_fxaaFbo == 0) {
+        glGenFramebuffers(1, &m_fxaaFbo);
+        glGenTextures(1, &m_fxaaTexture);
+    }
+
+    if (m_fxaaWidth != width || m_fxaaHeight != height) {
+        glBindTexture(GL_TEXTURE_2D, m_fxaaTexture);
+
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RGBA8,
+            width,
+            height,
+            0,
+            GL_RGBA,
+            GL_UNSIGNED_BYTE,
+            nullptr
+        );
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, m_fxaaFbo);
+
+        glFramebufferTexture2D(
+            GL_FRAMEBUFFER,
+            GL_COLOR_ATTACHMENT0,
+            GL_TEXTURE_2D,
+            m_fxaaTexture,
+            0
+        );
+
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            std::cerr << "[Render] FXAA framebuffer is incomplete\n";
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+            glDeleteFramebuffers(1, &m_fxaaFbo);
+            glDeleteTextures(1, &m_fxaaTexture);
+
+            m_fxaaFbo = 0;
+            m_fxaaTexture = 0;
+
+            m_fxaaWidth = 0;
+            m_fxaaHeight = 0;
+
+            return;
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        m_fxaaWidth = width;
+        m_fxaaHeight = height;
+    }
+}
+
+void RenderSystem::applyFXAA(
+    unsigned int targetFramebuffer,
+    unsigned int sourceFramebuffer,
+    int width,
+    int height
+) {
+    if (!fxaaEnabled || width <= 0 || height <= 0) {
+        return;
+    }
+
+    if (m_fxaaShader == nullptr || m_fxaaVao == 0) {
+        return;
+    }
+
+    ensureFXAAResources(width, height);
+
+    if (m_fxaaFbo == 0 || m_fxaaTexture == 0) {
+        return;
+    }
+
+    GLint prevDrawFbo = 0;
+    GLint prevReadFbo = 0;
+    GLint prevProgram = 0;
+    GLint prevActiveTexture = GL_TEXTURE0;
+    GLint prevTextureBinding = 0;
+    GLint prevViewport[4] = {0, 0, 0, 0};
+
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDrawFbo);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevReadFbo);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prevProgram);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActiveTexture);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTextureBinding);
+    glGetIntegerv(GL_VIEWPORT, prevViewport);
+
+    GLboolean prevDepthTest = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean prevBlend = glIsEnabled(GL_BLEND);
+    GLboolean prevCullFace = glIsEnabled(GL_CULL_FACE);
+
+    GLboolean prevDepthMask = GL_TRUE;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &prevDepthMask);
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDepthMask(GL_FALSE);
+    
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, sourceFramebuffer);
+
+    if (sourceFramebuffer == 0) {
+        glReadBuffer(GL_BACK);
+    } else {
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+    }
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_fxaaFbo);
+    glDrawBuffer(GL_COLOR_ATTACHMENT0);
+
+    glBlitFramebuffer(
+        0, 0, width, height,
+        0, 0, width, height,
+        GL_COLOR_BUFFER_BIT,
+        GL_NEAREST
+    );
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, targetFramebuffer);
+
+    if (targetFramebuffer == 0) {
+        glDrawBuffer(GL_BACK);
+    } else {
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    }
+
+    glViewport(0, 0, width, height);
+
+    m_fxaaShader->use();
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_fxaaTexture);
+
+    m_fxaaShader->setInt("uTexture", 0);
+    m_fxaaShader->setFloat("uTexelWidth", 1.0f / static_cast<float>(width));
+    m_fxaaShader->setFloat("uTexelHeight", 1.0f / static_cast<float>(height));
+
+    glBindVertexArray(m_fxaaVao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prevDrawFbo);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, prevReadFbo);
+
+    glUseProgram(prevProgram);
+
+    glActiveTexture(prevActiveTexture);
+    glBindTexture(GL_TEXTURE_2D, prevTextureBinding);
+
+    if (prevDepthTest) {
+        glEnable(GL_DEPTH_TEST);
+    }
+
+    if (prevBlend) {
+        glEnable(GL_BLEND);
+    }
+
+    if (prevCullFace) {
+        glEnable(GL_CULL_FACE);
+    }
+
+    glDepthMask(prevDepthMask);
+
+    glViewport(
+        prevViewport[0],
+        prevViewport[1],
+        prevViewport[2],
+        prevViewport[3]
+    );
 }

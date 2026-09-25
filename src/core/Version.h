@@ -1,5 +1,5 @@
 #pragma once
 
 namespace ChiselEngine {
-inline constexpr const char* Version = "0.3.0";
+inline constexpr const char* Version = "0.4.0";
 }

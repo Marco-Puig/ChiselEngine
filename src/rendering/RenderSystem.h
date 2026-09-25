@@ -33,6 +33,15 @@ public:
     bool shadowsEnabled = true;
     bool frustumCullingEnabled = true;
 
+    bool fxaaEnabled = true;
+
+    void applyFXAA(
+        unsigned int targetFramebuffer,
+        unsigned int sourceFramebuffer,
+        int width,
+        int height
+    );
+
 private:
     RenderSystem() = default;
     std::vector<Light*> m_lights;
@@ -67,4 +76,15 @@ private:
         DirectionalLight* light,
         const glm::mat4& lightSpaceMatrix
     );
+
+    void ensureFXAAResources(int width, int height);
+
+    std::unique_ptr<Shader> m_fxaaShader;
+
+    unsigned int m_fxaaFbo = 0;
+    unsigned int m_fxaaTexture = 0;
+    unsigned int m_fxaaVao = 0;
+
+    int m_fxaaWidth = 0;
+    int m_fxaaHeight = 0;
 };
