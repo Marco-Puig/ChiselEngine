@@ -141,7 +141,8 @@ DirectionalLight* RenderSystem::getDirectionalLight() const {
 
 namespace {
 
-const char* fxaaVertexShaderSource = R"glsl(#version 450 core
+const char* fxaaVertexShaderSource = R"glsl(#version 320 es
+precision highp float;
 out vec2 vUv;
 
 void main() {
@@ -153,7 +154,8 @@ void main() {
 }
 )glsl";
 
-const char* fxaaFragmentShaderSource = R"glsl(#version 450 core
+const char* fxaaFragmentShaderSource = R"glsl(#version 320 es
+precision highp float;
 in vec2 vUv;
 
 uniform sampler2D uTexture;
@@ -227,7 +229,8 @@ void RenderSystem::init() {
     glClearColor(0.08f, 0.1f, 0.14f, 1.0f);
 
     m_shader = std::make_unique<Shader>(
-        R"glsl(#version 450 core
+        R"glsl(#version 320 es
+precision highp float;
 layout(location=0) in vec3 aPosition;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aTexCoord;
@@ -254,7 +257,8 @@ void main() {
 }
 )glsl",
 
-        R"glsl(#version 450 core
+        R"glsl(#version 320 es
+precision highp float;
 in vec3 vNormal;
 in vec3 vWorldPosition;
 in vec2 vTexCoord;
@@ -416,7 +420,8 @@ void main() {
     );
 
     m_debugShader = std::make_unique<Shader>(
-        R"glsl(#version 450 core
+        R"glsl(#version 320 es
+precision highp float;
 layout(location=0) in vec3 aPosition;
 
 uniform mat4 uView;
@@ -427,7 +432,8 @@ void main() {
 }
 )glsl",
 
-        R"glsl(#version 450 core
+        R"glsl(#version 320 es
+precision highp float;
 out vec4 FragColor;
 
 void main() {
@@ -440,7 +446,8 @@ void main() {
     glGenBuffers(1, &m_debugVbo);
 
     m_skyboxShader = std::make_unique<Shader>(
-        R"glsl(#version 450 core
+        R"glsl(#version 320 es
+precision highp float;
 layout(location=0) in vec3 aPosition;
 
 out vec3 vDirection;
@@ -456,7 +463,8 @@ void main() {
 }
 )glsl",
 
-        R"glsl(#version 450 core
+        R"glsl(#version 320 es
+precision highp float;
 in vec3 vDirection;
 
 uniform sampler2D uEnvironment;
@@ -509,7 +517,8 @@ void main() {
     glBindVertexArray(0);
 
     m_shadowShader = std::make_unique<Shader>(
-        R"glsl(#version 450 core
+        R"glsl(#version 320 es
+precision highp float;
 layout(location=0) in vec3 aPosition;
 
 uniform mat4 uModel;
@@ -520,7 +529,8 @@ void main() {
 }
 )glsl",
 
-        R"glsl(#version 450 core
+        R"glsl(#version 320 es
+precision highp float;
 void main() {
 }
 )glsl"

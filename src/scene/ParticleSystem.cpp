@@ -11,7 +11,8 @@
 
 namespace {
 
-const char* particleVertexShader = R"glsl(#version 450 core
+const char* particleVertexShader = R"glsl(#version 320 es
+precision highp float;
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec4 aColor;
 layout(location = 2) in float aSize;
@@ -37,7 +38,8 @@ void main() {
 }
 )glsl";
 
-const char* particleFragmentShader = R"glsl(#version 450 core
+const char* particleFragmentShader = R"glsl(#version 320 es
+precision highp float;
 in vec4 vColor;
 
 out vec4 FragColor;

@@ -1,0 +1,53 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.chiselengine.app'
+    compileSdkVersion 32
+    ndkVersion '26.1.10909125'  // Match your installed NDK
+
+    defaultConfig {
+        applicationId 'com.chiselengine.app'
+        minSdkVersion 29
+        targetSdkVersion 32
+        versionCode 1
+        versionName '1.0'
+
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_shared',
+                          '-DCHISEL_TARGET_ANDROID=ON',
+                          '-DCHISEL_ENABLE_OPENXR=ON',
+                          '-DCHISEL_ENABLE_JOLT=ON',
+                          '-DCHISEL_ENABLE_LUA=ON'
+                cppFlags '-std=c++20 -fexceptions -frtti'
+                abiFilters 'arm64-v8a'  // Quest is ARM64
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            jniDebuggable true
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets']
+        }
+    }
+}
+
+dependencies {
+}

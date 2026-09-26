@@ -1,7 +1,7 @@
 #include "Shader.h"
+#include "platform/FileLoader.h"
+
 #include <glad/glad.h>
-#include <fstream>
-#include <sstream>
 #include <stdexcept>
 
 Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath) : m_id(0) {
@@ -43,11 +43,7 @@ void Shader::setVec4(const std::string& name, const glm::vec4& value) const {
 }
 
 std::string Shader::loadShaderSource(const std::string& path) {
-    std::ifstream file(path);
-    if (!file) throw std::runtime_error("Failed to open shader: " + path);
-    std::stringstream source;
-    source << file.rdbuf();
-    return source.str();
+    return FileLoader::loadTextFile(path);
 }
 
 void Shader::create(const char* vertexSource, const char* fragmentSource) {

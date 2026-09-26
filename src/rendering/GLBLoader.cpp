@@ -1,19 +1,22 @@
 #include "GLBLoader.h"
 #include "Material.h"
+#include "platform/FileLoader.h"
+
 #include <glad/glad.h>
 #include <tiny_gltf.h>
+
 #include <iostream>
-#include <fstream>
-#include <iterator>
 #include <stdexcept>
 #include <vector>
 #include <limits>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 namespace {
+
 struct SceneMeshInstance {
     int mesh = -1;
     int nodeIndex = -1;
@@ -219,6 +222,7 @@ Material loadMaterial(const tinygltf::Model& model, int matIndex) {
 
     return material;
 }
+
 }
 
 MeshNode* GLBLoader::loadGLB(const std::string& path) {
@@ -227,11 +231,8 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
     std::string err;
     std::string warn;
 
-    std::ifstream file(path, std::ios::binary);
-    if (!file)
-        throw std::runtime_error("Failed to open GLB file: " + path);
-    const std::vector<unsigned char> input((std::istreambuf_iterator<char>(file)),
-                                            std::istreambuf_iterator<char>());
+    std::vector<unsigned char> input = FileLoader::loadBinaryFile(path);
+
     if (input.size() < 20)
         throw std::runtime_error("GLB file is truncated: " + path);
 
@@ -441,7 +442,7 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
 
             targetNode->setMesh(vao, vbo, ebo, static_cast<int>(indices.size()), true);
             targetNode->setBounds(boundsMin, boundsMax);
-            
+
             Material material = loadMaterial(model, primitive.material);
             targetNode->setMaterial(material);
         }
@@ -455,8 +456,6 @@ MeshNode* GLBLoader::loadGLB(const std::string& path) {
     } else {
         root->setBounds(glm::vec3(0.0f), glm::vec3(0.0f));
     }
-
-    return root;
 
     return root;
 }

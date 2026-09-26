@@ -661,9 +661,12 @@ bool XRManager::createSession(Window& window) {
         return false;
     }
 
-    XrGraphicsBindingOpenGLWin32KHR binding{XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR};
-    binding.hDC = hdc;
-    binding.hGLRC = hglrc;
+    XrGraphicsBindingOpenGLESAndroidKHR binding{
+        XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR
+    };
+    binding.display = eglDisplay;
+    binding.config  = eglConfig;
+    binding.context = eglContext;
 
     XrSessionCreateInfo createInfo{XR_TYPE_SESSION_CREATE_INFO};
     createInfo.next = &binding;
