@@ -178,9 +178,7 @@ end
 function game.onUpdate(deltaTime, scene, animator)
     elapsedTime = elapsedTime + deltaTime
 
-    ------------------------------------------------------------------
     -- Frog respawn logic
-    ------------------------------------------------------------------
     local frog = scene:findNode("Frog")
 
     if frog ~= nil then
@@ -189,9 +187,7 @@ function game.onUpdate(deltaTime, scene, animator)
         end
     end
 
-    ------------------------------------------------------------------
     -- Tower damage demo
-    ------------------------------------------------------------------
     local tower = scene:findNode("Tower")
 
     if isDestructible(tower) and not tower:isDestroyed() then

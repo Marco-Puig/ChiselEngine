@@ -306,10 +306,10 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/resources)
     )
 endif()
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Game)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/game)
     add_custom_command(TARGET ChiselEngine POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-            ${CMAKE_CURRENT_SOURCE_DIR}/Game
-            $<TARGET_FILE_DIR:ChiselEngine>/Game
+            ${CMAKE_CURRENT_SOURCE_DIR}/game
+            $<TARGET_FILE_DIR:ChiselEngine>/game
     )
 endif()
