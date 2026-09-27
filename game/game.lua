@@ -93,7 +93,7 @@ function game.onStart(scene, animator)
 
     Engine.setSkybox("resources/graphics/skybox.jpg")
 
-    local floor = scene:loadMesh("resources/plane.glb", "Floor")
+    local floor = scene:loadMesh("resources/models/plane.glb", "Floor")
     floor:setPosition(0.0, 0.0, 0.0)
     Physics.addRigidBody(floor, "static", "convex", 0.8, 0.0)
     animator:procedural(floor, "y", "positive", "rotation", 0.1)
