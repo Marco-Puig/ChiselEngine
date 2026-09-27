@@ -65,17 +65,20 @@ LONG WINAPI engineUnhandledException(EXCEPTION_POINTERS* info) noexcept {
 
 void Engine::init() {
     std::set_terminate(engineTerminate);
-
 #ifdef _WIN32
     SetUnhandledExceptionFilter(engineUnhandledException);
 #endif
-
     m_window = std::make_unique<Window>(1600, 900, "Chisel Engine");
 
+    // Initialize Steammmm FIRST (Important)
+    net::NetworkManager::getInstance().init();
+
+    // Initialize Rendering and OpenXR
     RenderSystem::getInstance().init();
     XRManager::getInstance().init(*m_window);
+    
+    // Initialize Physics and Debug Scene Editor
     PhysicsSystem::getInstance().init();
-    net::NetworkManager::getInstance().init();
     SceneEditor::getInstance().init(*m_window);
 
     if (!AudioSystem::getInstance().init()) {

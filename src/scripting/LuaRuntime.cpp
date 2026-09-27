@@ -533,6 +533,10 @@ int netGetPlayerCount() {
     );
 }
 
+void netShowInviteDialog() {
+    net::NetworkManager::getInstance().showInviteDialog();
+}
+
 #endif
 
 #ifdef CHISEL_HAS_REPLICATION_MANAGER
@@ -693,6 +697,7 @@ void LuaRuntime::bindEngineApi() {
             .addFunction("isConnected", &netIsConnected)
             .addFunction("getLocalPlayerSlot", &netGetLocalPlayerSlot)
             .addFunction("getPlayerCount", &netGetPlayerCount)
+            .addFunction("showInviteDialog", &netShowInviteDialog) 
 #endif
 
 #ifdef CHISEL_HAS_REPLICATION_MANAGER

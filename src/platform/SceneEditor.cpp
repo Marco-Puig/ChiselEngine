@@ -331,26 +331,27 @@ void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
                     if (ImGui::Button("Host Private Lobby")) {
                         std::string code;
                         if (network.hostPrivateLobby(code)) {
-                            std::strncpy(
-                                m_lobbyCode,
-                                code.c_str(),
-                                sizeof(m_lobbyCode) - 1
-                            );
+                            std::strncpy(m_lobbyCode, code.c_str(), sizeof(m_lobbyCode) - 1);
                             m_lobbyCode[sizeof(m_lobbyCode) - 1] = '\0';
                         }
                     }
 
-                    ImGui::InputText(
-                        "Lobby Code",
-                        m_lobbyCode,
-                        IM_ARRAYSIZE(m_lobbyCode)
-                    );
+                    ImGui::InputText("Lobby Code", m_lobbyCode, IM_ARRAYSIZE(m_lobbyCode));
 
                     if (ImGui::Button("Join Private Lobby")) {
                         network.joinPrivateLobby(m_lobbyCode);
                     }
                 } else {
                     ImGui::Text("Lobby Code: %s", m_lobbyCode);
+                    
+                    // --- ADD THIS BUTTON ---
+                    if (network.isHost()) {
+                        if (ImGui::Button("Invite Friends (Steam)")) {
+                            network.showInviteDialog();
+                        }
+                    }
+                    // -----------------------
+
                     if (ImGui::Button("Disconnect")) {
                         network.shutdown();
                     }

@@ -44,6 +44,9 @@ public:
     void setMessageCallback(MessageCallback callback) {
         m_messageCallback = std::move(callback);
     }
+    
+    void showInviteDialog();
+    void joinLobbyBySteamId(uint64_t steamLobbyId);
 
 private:
     NetworkManager();

@@ -10,7 +10,6 @@
 #ifdef CHISEL_ENABLE_STEAM
 #include <steam/steam_api.h>
 
-
 namespace {
 
 struct SteamLobbyState {
@@ -23,6 +22,9 @@ struct SteamLobbyState {
 };
 
 static SteamLobbyState g_lobbyState;
+
+
+// Lobby Created Callback
 
 class CLobbyCreatedCallback {
 public:
@@ -44,14 +46,13 @@ public:
         // Configure lobby properties.
         SteamMatchmaking()->SetLobbyType(
             g_lobbyState.lobbyId,
-            k_ELobbyTypePublic
+            k_ELobbyTypeFriendsOnly
         );
         SteamMatchmaking()->SetLobbyMemberLimit(
             g_lobbyState.lobbyId,
             net::MaxPlayers
         );
 
-        // Use the lobby Steam ID as the lobby code.
         g_lobbyState.outLobbyCode =
             std::to_string(g_lobbyState.lobbyId.ConvertToUint64());
 
@@ -60,6 +61,9 @@ public:
     }
 };
 static CLobbyCreatedCallback g_lobbyCreatedCallback;
+
+
+// Lobby Enter Callback
 
 class CLobbyEnterCallback {
 public:
@@ -86,6 +90,9 @@ public:
 };
 static CLobbyEnterCallback g_lobbyEnterCallback;
 
+
+// Session Request Callback (auto-accept P2P connections)
+
 class CSessionRequestCallback {
 public:
     CCallback<CSessionRequestCallback,
@@ -104,6 +111,9 @@ public:
     }
 };
 static CSessionRequestCallback g_sessionRequestCallback;
+
+
+// Lobby Chat Update Callback (player join / leave)
 
 class CLobbyChatUpdateCallback {
 public:
@@ -135,10 +145,34 @@ public:
 };
 static CLobbyChatUpdateCallback g_lobbyChatUpdateCallback;
 
+
+// Game Lobby Join Requested Callback (Handles Steam Invites)
+
+class CGameLobbyJoinRequestedCallback {
+public:
+    CCallback<CGameLobbyJoinRequestedCallback, GameLobbyJoinRequested_t, true> m_callback;
+
+    CGameLobbyJoinRequestedCallback()
+        : m_callback(this, &CGameLobbyJoinRequestedCallback::OnGameLobbyJoinRequested) {}
+
+    void OnGameLobbyJoinRequested(GameLobbyJoinRequested_t* pCallback) {
+        std::cout << "[Network] Invite accepted, joining lobby "
+                  << pCallback->m_steamIDLobby.ConvertToUint64() << std::endl;
+        
+        net::NetworkManager::getInstance().joinLobbyBySteamId(
+            pCallback->m_steamIDLobby.ConvertToUint64()
+        );
+    }
+};
+static CGameLobbyJoinRequestedCallback g_gameLobbyJoinRequestedCallback;
+
 } // anonymous namespace
 #endif // CHISEL_ENABLE_STEAM
 
 namespace net {
+
+
+// Singleton
 
 NetworkManager& NetworkManager::getInstance() {
     static NetworkManager instance;
@@ -154,6 +188,9 @@ NetworkManager::NetworkManager()
 NetworkManager::~NetworkManager() {
     shutdown();
 }
+
+
+// Lifecycle
 
 bool NetworkManager::init() {
     if (m_initialized) {
@@ -205,6 +242,10 @@ void NetworkManager::shutdown() {
     std::cout << "[Network] NetworkManager shut down\n";
 }
 
+
+// Lobby Management
+
+
 bool NetworkManager::hostPrivateLobby(std::string& outLobbyCode) {
     if (!m_initialized) {
         std::cerr << "[Network] Cannot host lobby: not initialized\n";
@@ -245,7 +286,7 @@ bool NetworkManager::hostPrivateLobby(std::string& outLobbyCode) {
     if (!g_lobbyState.pendingCreate && !g_lobbyState.pendingJoin) {
         g_lobbyState.pendingCreate = true;
         SteamAPICall_t hSteamAPICall =
-            SteamMatchmaking()->CreateLobby(k_ELobbyTypePublic, MaxPlayers);
+            SteamMatchmaking()->CreateLobby(k_ELobbyTypeFriendsOnly, MaxPlayers);
         g_lobbyCreatedCallback.m_callResult.Set(
             hSteamAPICall,
             &g_lobbyCreatedCallback,
@@ -254,7 +295,6 @@ bool NetworkManager::hostPrivateLobby(std::string& outLobbyCode) {
     }
 
     // Spin-wait for the async callback to complete.
-    // This is safe for UI button clicks since it blocks briefly.
     for (int i = 0; i < 100 && g_lobbyState.pendingCreate; ++i) {
         SteamAPI_RunCallbacks();
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -357,6 +397,42 @@ bool NetworkManager::joinPrivateLobby(const std::string& lobbyCode) {
 #endif
 }
 
+void NetworkManager::showInviteDialog() {
+#ifdef CHISEL_ENABLE_STEAM
+    if (!g_lobbyState.lobbyReady || !g_lobbyState.isHost) {
+        std::cerr << "[Network] Cannot show invite dialog: not hosting a lobby\n";
+        return;
+    }
+    // Opens the Steam Overlay to the friends list
+    SteamFriends()->ActivateGameOverlayInviteDialog(g_lobbyState.lobbyId);
+#else
+    std::cerr << "[Network] Steam invites are only available in Steam builds.\n";
+#endif
+}
+
+void NetworkManager::joinLobbyBySteamId(uint64_t steamLobbyId) {
+#ifdef CHISEL_ENABLE_STEAM
+    if (!m_initialized) return;
+    if (g_lobbyState.pendingJoin || g_lobbyState.pendingCreate) return;
+
+    CSteamID lobbyId(steamLobbyId);
+    g_lobbyState.pendingJoin = true;
+    
+    SteamAPICall_t hSteamAPICall = SteamMatchmaking()->JoinLobby(lobbyId);
+    g_lobbyEnterCallback.m_callResult.Set(
+        hSteamAPICall,
+        &g_lobbyEnterCallback,
+        &CLobbyEnterCallback::OnLobbyEnter
+    );
+#else
+    (void)steamLobbyId;
+#endif
+}
+
+
+// Per-frame Update
+
+
 void NetworkManager::update(float deltaTime) {
     (void)deltaTime;
 
@@ -401,9 +477,9 @@ void NetworkManager::update(float deltaTime) {
 #endif
 }
 
-// ------------------------------------------------------------------
+
 // Sending Data
-// ------------------------------------------------------------------
+
 
 void NetworkManager::broadcastReliable(const void* data, size_t size) {
     if (!m_initialized || !m_connected || data == nullptr || size == 0) {
@@ -427,6 +503,9 @@ void NetworkManager::broadcastReliable(const void* data, size_t size) {
             static_cast<int>(Channel::Reliable)
         );
     }
+#else
+    (void)data;
+    (void)size;
 #endif
 }
 
@@ -452,6 +531,9 @@ void NetworkManager::broadcastUnreliable(const void* data, size_t size) {
             static_cast<int>(Channel::Unreliable)
         );
     }
+#else
+    (void)data;
+    (void)size;
 #endif
 }
 
@@ -480,6 +562,10 @@ void NetworkManager::sendReliable(
         k_nSteamNetworkingSend_Reliable,
         static_cast<int>(Channel::Reliable)
     );
+#else
+    (void)slot;
+    (void)data;
+    (void)size;
 #endif
 }
 
@@ -508,12 +594,16 @@ void NetworkManager::sendUnreliable(
         k_nSteamNetworkingSend_Unreliable,
         static_cast<int>(Channel::Unreliable)
     );
+#else
+    (void)slot;
+    (void)data;
+    (void)size;
 #endif
 }
 
-// ------------------------------------------------------------------
+
 // Internal Helpers
-// ------------------------------------------------------------------
+
 
 void NetworkManager::handleReceivedData(
     SteamPlayerId fromSteamId,
