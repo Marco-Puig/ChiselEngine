@@ -9,6 +9,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 option(CHISEL_ENABLE_OPENXR "Build OpenXR headset support" ON)
 option(CHISEL_ENABLE_JOLT "Build Jolt Physics support" ON)
 option(CHISEL_ENABLE_LUA "Build Lua scripting support" ON)
+option(CHISEL_ENABLE_STEAM "Build Steamworks multiplayer support" ON)
 
 include(FetchContent)
 
@@ -234,6 +235,28 @@ if(CHISEL_ENABLE_JOLT)
     target_compile_definitions(ChiselEngine PRIVATE CHISEL_ENABLE_JOLT)
     target_include_directories(ChiselEngine PRIVATE ${jolt_SOURCE_DIR})
     target_link_libraries(ChiselEngine PRIVATE Jolt)
+endif()
+
+if(CHISEL_ENABLE_STEAM)
+    set(STEAMWORKS_ROOT ${CMAKE_SOURCE_DIR}/third_party/steamworks)
+    target_compile_definitions(ChiselEngine PRIVATE CHISEL_ENABLE_STEAM)
+    target_include_directories(ChiselEngine PRIVATE
+        ${STEAMWORKS_ROOT}/public
+    )
+    if(WIN32)
+        target_link_libraries(ChiselEngine PRIVATE
+            ${STEAMWORKS_ROOT}/redistributable_bin/win64/steam_api64.lib
+        )
+        add_custom_command(TARGET ChiselEngine POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${STEAMWORKS_ROOT}/redistributable_bin/win64/steam_api64.dll"
+            $<TARGET_FILE_DIR:ChiselEngine>
+        )
+    endif()
+    file(GENERATE
+        OUTPUT "$<TARGET_FILE_DIR:ChiselEngine>/steam_appid.txt"
+        CONTENT "480"
+    )
 endif()
 
 target_link_libraries(ChiselEngine PRIVATE

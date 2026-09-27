@@ -70,6 +70,7 @@ public:
     void setBodyPosition(Node* node, const glm::vec3& position);
     void addForce(Node* node, const glm::vec3& force);
     void setLinearVelocity(Node* node, const glm::vec3& velocity);
+    void setBodyNetworkRemote(Node* node, bool remote);
 
 private:
     friend class PhysicsBody;

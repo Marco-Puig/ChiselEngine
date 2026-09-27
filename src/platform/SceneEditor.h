@@ -52,4 +52,5 @@ private:
     std::string m_gpuMemory;
     std::string m_cpuName;
     std::string m_osName;
+    char m_lobbyCode[64] = {}; 
 };

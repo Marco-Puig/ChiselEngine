@@ -9,6 +9,14 @@
 #include "rendering/Light.h"
 #include "scene/MeshNode.h"
 #include "scene/Animator.h"
+
+#if defined(__has_include)
+#  if __has_include("net/NetworkManager.h")
+#    include "net/NetworkManager.h"
+#    define CHISEL_SCENE_EDITOR_HAS_NETWORK 1
+#  endif
+#endif
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -302,6 +310,54 @@ void SceneEditor::render(Window& window, XRManager& xr, Node* sceneRoot,
             if (ImGui::Checkbox("FXAA", &RenderSystem::getInstance().fxaaEnabled)) {
                 // FXAA enabled/disabled
             }
+
+#ifdef CHISEL_SCENE_EDITOR_HAS_NETWORK
+            ImGui::Separator();
+            if (ImGui::CollapsingHeader("Multiplayer", ImGuiTreeNodeFlags_DefaultOpen)) {
+                auto& network = net::NetworkManager::getInstance();
+                ImGui::Text("Initialized: %s", network.isInitialized() ? "Yes" : "No");
+                ImGui::Text("Connected: %s", network.isConnected() ? "Yes" : "No");
+                ImGui::Text("Role: %s",
+                    network.isHost() ? "Host" :
+                    network.isConnected() ? "Client" : "Disconnected"
+                );
+                ImGui::Text("Player Count: %u", network.getPlayerCount());
+
+                if (!network.isInitialized()) {
+                    if (ImGui::Button("Initialize Networking")) {
+                        network.init();
+                    }
+                } else if (!network.isConnected()) {
+                    if (ImGui::Button("Host Private Lobby")) {
+                        std::string code;
+                        if (network.hostPrivateLobby(code)) {
+                            std::strncpy(
+                                m_lobbyCode,
+                                code.c_str(),
+                                sizeof(m_lobbyCode) - 1
+                            );
+                            m_lobbyCode[sizeof(m_lobbyCode) - 1] = '\0';
+                        }
+                    }
+
+                    ImGui::InputText(
+                        "Lobby Code",
+                        m_lobbyCode,
+                        IM_ARRAYSIZE(m_lobbyCode)
+                    );
+
+                    if (ImGui::Button("Join Private Lobby")) {
+                        network.joinPrivateLobby(m_lobbyCode);
+                    }
+                } else {
+                    ImGui::Text("Lobby Code: %s", m_lobbyCode);
+                    if (ImGui::Button("Disconnect")) {
+                        network.shutdown();
+                    }
+                }
+            }
+#endif
+
             if (DirectionalLight* light = dynamic_cast<DirectionalLight*>(m_selectedNode)) {
                 float intensity = light->getIntensity();
                 float exposure = light->getExposure();

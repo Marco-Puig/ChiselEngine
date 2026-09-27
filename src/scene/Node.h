@@ -40,6 +40,8 @@ public:
     bool isEditorManipulated() const { return m_editorManipulated; }
     void setAnimationDriven(bool driven) { m_animationDriven = driven; }
     bool isAnimationDriven() const { return m_animationDriven; }
+    uint32_t getNetworkId() const { return m_networkId; }
+    void setNetworkId(uint32_t id) { m_networkId = id; }
 
 protected:
     std::string m_name;
@@ -50,4 +52,5 @@ protected:
     bool m_editorManipulated = false;
     bool m_animationDriven = false;
     std::vector<std::unique_ptr<Node>> m_children;
+    uint32_t m_networkId = 0;
 };

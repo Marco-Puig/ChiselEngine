@@ -18,6 +18,9 @@
 #include <iostream>
 #include <cstdio>
 
+#include "net/NetworkManager.h"
+#include "net/ReplicationManager.h"
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -72,6 +75,7 @@ void Engine::init() {
     RenderSystem::getInstance().init();
     XRManager::getInstance().init(*m_window);
     PhysicsSystem::getInstance().init();
+    net::NetworkManager::getInstance().init();
     SceneEditor::getInstance().init(*m_window);
 
     if (!AudioSystem::getInstance().init()) {
@@ -81,7 +85,7 @@ void Engine::init() {
 
 void Engine::run(IGame* game) {
     game->start();
-
+    net::ReplicationManager::getInstance().initialize(game->getScene());
     XRManager& xr = XRManager::getInstance();
 
     if (game->getCamera() != nullptr) {
@@ -122,6 +126,8 @@ void Engine::run(IGame* game) {
 
         PhysicsSystem::getInstance().syncAnimationDrivenNodes();
         PhysicsSystem::getInstance().update(dt);
+        net::NetworkManager::getInstance().update(dt);
+        net::ReplicationManager::getInstance().update(dt);
         updateParticleSystems(game->getSceneRoot(), dt);
         xr.syncActions();
 
@@ -272,5 +278,6 @@ void Engine::run(IGame* game) {
     SceneEditor::getInstance().shutdown();
     PhysicsSystem::getInstance().shutdown();
     AudioSystem::getInstance().shutdown();
+    net::NetworkManager::getInstance().shutdown();
     xr.shutdown();
 }

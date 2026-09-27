@@ -19,3 +19,4 @@ CMakeScripts/
 # Logs
 *.log
 /android/.idea
+/third_party/steamworks

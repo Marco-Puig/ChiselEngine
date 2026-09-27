@@ -1,17 +1,25 @@
 #pragma once
+
 #include "core/IGame.h"
 #include "scene/Scene.h"
 #include "scene/Animator.h"
 #include "scene/ArcRotateCamera.h"
 #include "scripting/LuaRuntime.h"
+
 #include <memory>
 
 class Game : public IGame {
 public:
     Game();
+
     void start() override;
     void update(float deltaTime) override;
+
     Node* getSceneRoot() const { return scene->getRoot(); }
+
+    // Useful for multiplayer/system initialization.
+    Scene* getScene() const { return scene.get(); }
+
     ArcRotateCamera* getCamera() const override { return camera.get(); }
     Animator* getAnimator() const override { return animator.get(); }
 
