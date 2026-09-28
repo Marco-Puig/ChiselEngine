@@ -4,6 +4,7 @@
 #include "scene/Node.h"
 #include "scene/Scene.h"
 #include "scene/MeshNode.h"
+#include "scene/PlayerAvatarNode.h"
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -12,25 +13,27 @@
 #include <cstring>
 #include <iostream>
 
+#include <stdexcept>
+#include <string>
+
 namespace net {
 
-// ------------------------------------------------------------------
+
 // Singleton
-// ------------------------------------------------------------------
+
 
 ReplicationManager& ReplicationManager::getInstance() {
     static ReplicationManager instance;
     return instance;
 }
 
-// ------------------------------------------------------------------
+
 // Lifecycle
-// ------------------------------------------------------------------
+
 
 void ReplicationManager::initialize(Scene* scene) {
     m_scene = scene;
 
-    // Register the network message callback.
     NetworkManager::getInstance().setMessageCallback(
         [this](
             PlayerSlot fromSlot,
@@ -41,6 +44,8 @@ void ReplicationManager::initialize(Scene* scene) {
             handleNetMessage(fromSlot, data, size, reliable);
         }
     );
+
+    m_lastPlayerCount = 0;
 }
 
 void ReplicationManager::shutdown() {
@@ -53,9 +58,9 @@ void ReplicationManager::shutdown() {
     m_transformSendTimer = 0.0f;
 }
 
-// ------------------------------------------------------------------
+
 // Per-frame update
-// ------------------------------------------------------------------
+
 
 void ReplicationManager::update(float deltaTime) {
     if (m_scene == nullptr) {
@@ -69,7 +74,19 @@ void ReplicationManager::update(float deltaTime) {
     }
 
     if (network.isHost()) {
-        // Host sends transform snapshots at a fixed rate.
+        // If the player count changed, resend spawn messages for existing nodes.
+        // This helps late joiners receive replicated objects.
+        uint32_t playerCount = network.getPlayerCount();
+
+        if (playerCount != m_lastPlayerCount) {
+            m_lastPlayerCount = playerCount;
+
+            if (playerCount > 1) {
+                resendAllSpawnNodes();
+            }
+        }
+
+        // Existing transform snapshot logic.
         constexpr float transformSendRate = 20.0f;
         constexpr float transformSendInterval = 1.0f / transformSendRate;
 
@@ -85,9 +102,9 @@ void ReplicationManager::update(float deltaTime) {
     }
 }
 
-// ------------------------------------------------------------------
+
 // Network ID management
-// ------------------------------------------------------------------
+
 
 uint32_t ReplicationManager::assignNetworkId(Node* node) {
     if (node == nullptr) {
@@ -119,9 +136,9 @@ Node* ReplicationManager::findByNetworkId(uint32_t networkId) const {
     return nullptr;
 }
 
-// ------------------------------------------------------------------
+
 // Host-side spawn / despawn
-// ------------------------------------------------------------------
+
 
 void ReplicationManager::spawnNodeOnClients(Node* node) {
     if (node == nullptr) {
@@ -221,9 +238,9 @@ void ReplicationManager::despawnNodeOnClients(Node* node) {
     ++m_sceneVersion;
 }
 
-// ------------------------------------------------------------------
+
 // Lua gameplay events (placeholder for step 10)
-// ------------------------------------------------------------------
+
 
 void ReplicationManager::sendLuaEvent(
     const std::string& eventName,
@@ -253,9 +270,9 @@ void ReplicationManager::sendLuaEvent(
     network.broadcastReliable(&message, sizeof(message));
 }
 
-// ------------------------------------------------------------------
+
 // Network message handler
-// ------------------------------------------------------------------
+
 
 void ReplicationManager::handleNetMessage(
     PlayerSlot fromSlot,
@@ -271,9 +288,7 @@ void ReplicationManager::handleNetMessage(
 
     switch (header->type) {
 
-        // ----------------------------------------------------------
         // Spawn a replicated node (received by clients from host)
-        // ----------------------------------------------------------
         case MessageType::SpawnNode: {
             if (NetworkManager::getInstance().isHost()) {
                 break;
@@ -286,40 +301,66 @@ void ReplicationManager::handleNetMessage(
             const auto* message =
                 static_cast<const SpawnNodeMessage*>(data);
 
-            // Check if we already have this node.
+            // If we already have this exact network ID, ignore it.
             if (findByNetworkId(message->networkId) != nullptr) {
                 break;
             }
 
-            // Create the node on the client.
-            // For now, create a basic Node. If it has a GLB path,
-            // load the mesh; otherwise, create an empty node.
-            //
-            // NOTE: In a full implementation, you would use
-            // scene->loadMesh() or similar to spawn the mesh.
-            // For now, create a placeholder node.
             Node* newNode = nullptr;
 
-            if (message->glbPath[0] != '\0') {
-                // TODO: Load the GLB mesh using the scene.
-                // For now, skip GLB loading in this placeholder.
-                // You would call something like:
-                // newNode = m_scene->loadMesh(message->glbPath, message->name);
-            } else {
-                // Create a basic node.
-                // NOTE: You need to adapt this to your Scene API.
-                // If Scene has a createNode method, use it.
-                // Otherwise, you may need to create a Node directly.
-                //
-                // For now, we'll skip creating the node if we can't.
-                // In a real implementation, you'd create it via Scene.
+            std::string nodeName(message->name);
+
+            // Reuse an existing node with the same name if present.
+            // This can happen if Lua already created a placeholder avatar.
+            if (m_scene != nullptr) {
+                newNode = m_scene->findByName(nodeName);
+            }
+
+            // If this is a player avatar, create it.
+            if (newNode == nullptr &&
+                nodeName.rfind("PlayerAvatar_", 0) == 0) {
+
+                int slot = 0;
+
+                try {
+                    slot = std::stoi(nodeName.substr(13));
+                } catch (...) {
+                    slot = 0;
+                }
+
+                glm::vec3 color(1.0f);
+
+                if (slot == 0) {
+                    color = glm::vec3(0.25f, 0.75f, 1.0f);
+                } else if (slot == 1) {
+                    color = glm::vec3(1.0f, 0.55f, 0.2f);
+                } else {
+                    color = glm::vec3(0.55f, 1.0f, 0.35f);
+                }
+
+                auto avatar = std::make_unique<PlayerAvatarNode>(
+                    nodeName,
+                    color
+                );
+
+                PlayerAvatarNode* rawAvatar = avatar.get();
+
+                if (m_scene != nullptr) {
+                    m_scene->adopt(std::unique_ptr<MeshNode>(avatar.release()));
+                }
+
+                newNode = rawAvatar;
             }
 
             if (newNode != nullptr) {
-                // Set the network ID.
+                // Remove old mapping if this node already had one.
+                auto oldMapping = m_nodeToNetworkId.find(newNode);
+                if (oldMapping != m_nodeToNetworkId.end()) {
+                    m_networkIdToNode.erase(oldMapping->second);
+                }
+
                 newNode->setNetworkId(message->networkId);
 
-                // Apply transform.
                 newNode->setPosition(glm::vec3(
                     message->position[0],
                     message->position[1],
@@ -327,10 +368,10 @@ void ReplicationManager::handleNetMessage(
                 ));
 
                 newNode->setRotation(glm::normalize(glm::quat(
-                    message->rotation[3],  // w
-                    message->rotation[0],  // x
-                    message->rotation[1],  // y
-                    message->rotation[2]   // z
+                    message->rotation[3],
+                    message->rotation[0],
+                    message->rotation[1],
+                    message->rotation[2]
                 )));
 
                 newNode->setScale(glm::vec3(
@@ -339,14 +380,56 @@ void ReplicationManager::handleNetMessage(
                     message->scale[2]
                 ));
 
-                // Register in our maps.
                 m_networkIdToNode[message->networkId] = newNode;
                 m_nodeToNetworkId[newNode] = message->networkId;
+
+                std::cout << "[Replication] Spawned replicated node: "
+                        << message->name
+                        << " (ID: " << message->networkId << ")" << std::endl;
             }
 
             break;
         }
+        case MessageType::AvatarTransform: {
+            if (!NetworkManager::getInstance().isHost()) {
+                break;
+            }
 
+            if (size < sizeof(AvatarTransformMessage)) {
+                break;
+            }
+
+            const auto* message =
+                static_cast<const AvatarTransformMessage*>(data);
+
+            PlayerSlot slot =
+                (fromSlot != InvalidSlot) ? fromSlot : message->slot;
+
+            if (slot == InvalidSlot || m_scene == nullptr) {
+                break;
+            }
+
+            const std::string avatarName =
+                "PlayerAvatar_" + std::to_string(slot);
+
+            Node* node = m_scene->findByName(avatarName);
+
+            if (node != nullptr) {
+                node->setPosition(glm::vec3(
+                    message->position[0],
+                    message->position[1],
+                    message->position[2]
+                ));
+
+                // Make sure it is registered for replication.
+                if (node->getNetworkId() == 0) {
+                    assignNetworkId(node);
+                }
+            }
+
+            break;
+        }
+        
         case MessageType::DespawnNode: {
             if (NetworkManager::getInstance().isHost()) {
                 break;
@@ -476,6 +559,12 @@ void ReplicationManager::applyTransformSnapshots(float deltaTime) {
     const float alpha =
         1.0f - std::exp(-smoothingStrength * deltaTime);
 
+    const PlayerSlot localSlot =
+        NetworkManager::getInstance().getLocalPlayerSlot();
+
+    const std::string localAvatarName =
+        "PlayerAvatar_" + std::to_string(localSlot);
+
     for (auto& pair : m_transformTargets) {
         const uint32_t networkId = pair.first;
         TransformTarget& target = pair.second;
@@ -490,10 +579,14 @@ void ReplicationManager::applyTransformSnapshots(float deltaTime) {
             continue;
         }
 
+        // Do not let host snapshots fight the local player's own avatar.
+        if (node->getName() == localAvatarName) {
+            continue;
+        }
+
         const glm::vec3 currentPosition = node->getPosition();
         const glm::quat currentRotation = node->getRotation();
 
-        // If the object teleported a large distance, snap instead of smoothing.
         const float distance = glm::distance(currentPosition, target.position);
 
         if (distance > 4.0f) {
@@ -516,6 +609,95 @@ void ReplicationManager::applyTransformSnapshots(float deltaTime) {
             )
         );
     }
+}
+
+void ReplicationManager::resendAllSpawnNodes() {
+    auto& network = NetworkManager::getInstance();
+
+    if (!network.isHost()) {
+        return;
+    }
+
+    for (const auto& pair : m_networkIdToNode) {
+        const uint32_t networkId = pair.first;
+        Node* node = pair.second;
+
+        if (node == nullptr) {
+            continue;
+        }
+
+        SpawnNodeMessage message{};
+
+        message.header.type = MessageType::SpawnNode;
+        message.header.sequence = 0;
+        message.header.senderSlot = network.getLocalPlayerSlot();
+
+        message.networkId = networkId;
+
+        const std::string& name = node->getName();
+        std::strncpy(message.name, name.c_str(), sizeof(message.name) - 1);
+        message.name[sizeof(message.name) - 1] = '\0';
+
+        message.glbPath[0] = '\0';
+
+        const glm::vec3 position = node->getPosition();
+        const glm::quat rotation = node->getRotation();
+        const glm::vec3 scale = node->getScale();
+
+        message.position[0] = position.x;
+        message.position[1] = position.y;
+        message.position[2] = position.z;
+
+        message.rotation[0] = rotation.x;
+        message.rotation[1] = rotation.y;
+        message.rotation[2] = rotation.z;
+        message.rotation[3] = rotation.w;
+
+        message.scale[0] = scale.x;
+        message.scale[1] = scale.y;
+        message.scale[2] = scale.z;
+
+        message.bodyType = 0;
+        message.colliderType = 0;
+        message.friction = 0.5f;
+        message.restitution = 0.0f;
+
+        network.broadcastReliable(&message, sizeof(message));
+    }
+
+    std::cout << "[Replication] Resent spawn messages for "
+              << m_networkIdToNode.size()
+              << " replicated node(s)" << std::endl;
+}
+
+void ReplicationManager::sendAvatarTransform(
+    PlayerSlot slot,
+    const glm::vec3& position
+) {
+    auto& network = NetworkManager::getInstance();
+
+    if (!network.isConnected()) {
+        return;
+    }
+
+    // Only clients send their avatar transform to the host.
+    if (network.isHost()) {
+        return;
+    }
+
+    AvatarTransformMessage message{};
+
+    message.header.type = MessageType::AvatarTransform;
+    message.header.sequence = 0;
+    message.header.senderSlot = network.getLocalPlayerSlot();
+
+    message.slot = slot;
+
+    message.position[0] = position.x;
+    message.position[1] = position.y;
+    message.position[2] = position.z;
+
+    network.sendUnreliable(HostSlot, &message, sizeof(message));
 }
 
 }

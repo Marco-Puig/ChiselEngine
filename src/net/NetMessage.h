@@ -30,6 +30,7 @@ enum class MessageType : uint8_t {
     TransformSnapshot = 20,
     PhysicsSnapshot = 21,
     RigSnapshot = 22,
+    AvatarTransform = 23,
 
     // Animation
     AnimationCommand = 30,
@@ -213,6 +214,14 @@ struct PongMessage {
 
     float clientTime = 0.0f;
     float serverTime = 0.0f;
+};
+
+struct AvatarTransformMessage {
+    MessageHeader header;
+
+    PlayerSlot slot = InvalidSlot;
+
+    float position[3] = {0.0f, 0.0f, 0.0f};
 };
 
 #pragma pack(pop)

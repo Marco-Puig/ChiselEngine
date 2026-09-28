@@ -38,6 +38,11 @@
 #    include "net/ReplicationManager.h"
 #    define CHISEL_HAS_REPLICATION_MANAGER 1
 #  endif
+
+#  if __has_include("scene/PlayerAvatarNode.h")
+#    include "scene/PlayerAvatarNode.h"
+#    define CHISEL_HAS_PLAYER_AVATAR 1
+#  endif
 #endif
 
 namespace {
@@ -45,12 +50,8 @@ namespace {
 Node* createPlayerAvatar(
     Scene* scene,
     const std::string& name,
-    float x,
-    float y,
-    float z,
-    float r,
-    float g,
-    float b
+    float x, float y, float z,
+    float r, float g, float b
 ) {
     if (scene == nullptr) {
         return nullptr;
@@ -64,7 +65,6 @@ Node* createPlayerAvatar(
     avatar->setPosition(glm::vec3(x, y, z));
 
     Node* result = avatar.get();
-
     scene->adopt(std::unique_ptr<MeshNode>(avatar.release()));
 
     return result;
@@ -557,6 +557,27 @@ void netDespawnNode(Node* node) {
 
 }
 
+#if defined(CHISEL_HAS_NETWORK_MANAGER) && defined(CHISEL_HAS_REPLICATION_MANAGER)
+
+void netSendAvatarTransform(float x, float y, float z) {
+    auto& network = net::NetworkManager::getInstance();
+
+    if (!network.isConnected()) {
+        return;
+    }
+
+    if (network.isHost()) {
+        return;
+    }
+
+    net::ReplicationManager::getInstance().sendAvatarTransform(
+        network.getLocalPlayerSlot(),
+        glm::vec3(x, y, z)
+    );
+}
+
+#endif
+
 LuaRuntime::LuaRuntime() = default;
 
 LuaRuntime::~LuaRuntime() {
@@ -703,6 +724,7 @@ void LuaRuntime::bindEngineApi() {
 #ifdef CHISEL_HAS_REPLICATION_MANAGER
             .addFunction("replicateNode", &netReplicateNode)
             .addFunction("despawnNode", &netDespawnNode)
+            .addFunction("sendAvatarTransform", &netSendAvatarTransform)
 #endif
 
         .endNamespace();

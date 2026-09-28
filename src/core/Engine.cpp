@@ -63,7 +63,7 @@ LONG WINAPI engineUnhandledException(EXCEPTION_POINTERS* info) noexcept {
 
 }
 
-void Engine::init() {
+void Engine::init(int argc, char** argv) {
     std::set_terminate(engineTerminate);
 #ifdef _WIN32
     SetUnhandledExceptionFilter(engineUnhandledException);
@@ -72,6 +72,7 @@ void Engine::init() {
 
     // Initialize Steammmm FIRST (Important)
     net::NetworkManager::getInstance().init();
+    net::NetworkManager::getInstance().checkForPendingInvite(argc, argv);
 
     // Initialize Rendering and OpenXR
     RenderSystem::getInstance().init();

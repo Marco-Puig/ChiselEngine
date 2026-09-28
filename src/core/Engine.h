@@ -10,7 +10,7 @@ public:
         return instance;
     }
 
-    void init();
+    void init(int argc, char** argv);
     void run(IGame* game);
 
 private:

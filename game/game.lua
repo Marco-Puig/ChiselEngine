@@ -5,6 +5,9 @@ local elapsedTime = 0.0
 local playerAvatars = {}
 local localPlayerSlot = 0
 
+local hostAvatarsSpawned = false
+local offlineAvatarsSpawned = false
+
 local function isDestructible(node)
     return node ~= nil
         and node.applyDamage ~= nil
@@ -37,15 +40,18 @@ local function spawnPlayerAvatar(scene, slot, x, y, z)
 
     local name = "PlayerAvatar_" .. tostring(slot)
 
-    local existing = scene:findNode(name)
-    if existing ~= nil then
-        playerAvatars[slot] = existing
-        return existing
+    local avatar = scene:findNode(name)
+
+    if avatar ~= nil then
+        playerAvatars[slot] = avatar
+        avatar:setPosition(x, y, z)
+        avatar:setScale(1.0, 1.0, 1.0)
+        return avatar
     end
 
     local r, g, b = getPlayerColor(slot)
 
-    local avatar = scene:createPlayerAvatar(
+    avatar = scene:createPlayerAvatar(
         name,
         x,
         y,
@@ -58,8 +64,7 @@ local function spawnPlayerAvatar(scene, slot, x, y, z)
     if avatar ~= nil then
         playerAvatars[slot] = avatar
 
-        -- If your multiplayer replication module exists and we are the host,
-        -- replicate this avatar to other players.
+        -- If we are the host, replicate this avatar to clients.
         if Net ~= nil and Net.replicateNode ~= nil and Net.isHost ~= nil then
             if Net.isHost() then
                 Net.replicateNode(avatar)
@@ -70,19 +75,84 @@ local function spawnPlayerAvatar(scene, slot, x, y, z)
     return avatar
 end
 
-local function updateLocalAvatar()
-    local avatar = playerAvatars[localPlayerSlot]
+local function spawnHostAvatars(scene)
+    for slot = 0, 2 do
+        local x = 0.0
+        local z = 1.0
+
+        if slot == 1 then
+            x = 1.5
+            z = -1.5
+        elseif slot == 2 then
+            x = -1.5
+            z = -1.5
+        end
+
+        spawnPlayerAvatar(scene, slot, x, 0.0, z)
+    end
+
+    hostAvatarsSpawned = true
+end
+
+local function spawnOfflineAvatars(scene)
+    spawnPlayerAvatar(scene, 1, 1.5, 0.0, -1.5)
+    spawnPlayerAvatar(scene, 2, -1.5, 0.0, -1.5)
+
+    offlineAvatarsSpawned = true
+end
+
+local function hideOfflineAvatars()
+    for slot = 1, 2 do
+        local avatar = playerAvatars[slot]
+
+        if avatar ~= nil then
+            avatar:setScale(0.0001, 0.0001, 0.0001)
+        end
+    end
+
+    offlineAvatarsSpawned = false
+end
+
+local function getAvatar(scene, slot)
+    local avatar = playerAvatars[slot]
+
+    if avatar == nil then
+        avatar = scene:findNode("PlayerAvatar_" .. tostring(slot))
+        playerAvatars[slot] = avatar
+    end
+
+    return avatar
+end
+
+local function updateLocalAvatar(scene)
+    if Engine.getVRPlayerPositionX == nil then
+        return
+    end
+
+    local avatar = getAvatar(scene, localPlayerSlot)
 
     if avatar == nil then
         return
     end
 
-    -- Keep the local player's avatar aligned with the VR rig.
-    avatar:setPosition(
-        Engine.getVRPlayerPositionX(),
-        Engine.getVRPlayerPositionY(),
-        Engine.getVRPlayerPositionZ()
-    )
+    local x = Engine.getVRPlayerPositionX()
+    local y = Engine.getVRPlayerPositionY()
+    local z = Engine.getVRPlayerPositionZ()
+
+    -- Move locally.
+    avatar:setPosition(x, y, z)
+
+    -- If we are a client, send our avatar position to the host.
+    if Net ~= nil
+        and Net.isConnected ~= nil
+        and Net.isConnected()
+        and Net.isHost ~= nil
+        and Net.sendAvatarTransform ~= nil then
+
+        if not Net.isHost() then
+            Net.sendAvatarTransform(x, y, z)
+        end
+    end
 end
 
 function game.onStart(scene, animator)
@@ -121,7 +191,6 @@ function game.onStart(scene, animator)
 
     if scene.createFire ~= nil then
         local fire = scene:createFire("Fire", 0.0, 0.25, -2.0)
-
         if fire ~= nil then
             fire:setParticleEmissionRate(140.0)
         end
@@ -129,48 +198,8 @@ function game.onStart(scene, animator)
 
     if scene.createSmoke ~= nil then
         local smoke = scene:createSmoke("Smoke", 0.0, 1.25, -2.0)
-
         if smoke ~= nil then
             smoke:setParticleEmissionRate(30.0)
-        end
-    end
-
-    -- If your multiplayer module exists, ask it for our player slot.
-    if Net ~= nil and Net.getLocalPlayerSlot ~= nil then
-        localPlayerSlot = Net.getLocalPlayerSlot()
-    end
-
-    local networkActive = false
-
-    if Net ~= nil and Net.isConnected ~= nil then
-        networkActive = Net.isConnected()
-    end
-
-    if not networkActive then
-        -- Offline/single-player preview:
-        -- spawn two fake remote players so you can see the visuals.
-        spawnPlayerAvatar(scene, 1, 1.5, 0.0, -1.5)
-        spawnPlayerAvatar(scene, 2, -1.5, 0.0, -1.5)
-    else
-        -- Networked session:
-        -- spawn avatars for all possible player slots.
-        --
-        -- Later, when you have proper join/leave messages, you should
-        -- spawn remote avatars when players join instead of spawning
-        -- all slots immediately.
-        for slot = 0, 2 do
-            local x = 0.0
-            local z = 1.0
-
-            if slot == 1 then
-                x = 1.5
-                z = -1.5
-            elseif slot == 2 then
-                x = -1.5
-                z = -1.5
-            end
-
-            spawnPlayerAvatar(scene, slot, x, 0.0, z)
         end
     end
 end
@@ -178,6 +207,34 @@ end
 function game.onUpdate(deltaTime, scene, animator)
     elapsedTime = elapsedTime + deltaTime
 
+    
+    -- Network state
+    local networkActive = false
+
+    if Net ~= nil and Net.isConnected ~= nil then
+        networkActive = Net.isConnected()
+    end
+
+    if Net ~= nil and Net.getLocalPlayerSlot ~= nil then
+        localPlayerSlot = Net.getLocalPlayerSlot()
+    end
+
+    if networkActive then
+        if offlineAvatarsSpawned then
+            hideOfflineAvatars()
+        end
+
+        -- Host is responsible for spawning all player avatars.
+        if Net.isHost ~= nil and Net.isHost() and not hostAvatarsSpawned then
+            spawnHostAvatars(scene)
+        end
+    else
+        if not offlineAvatarsSpawned and not hostAvatarsSpawned then
+            spawnOfflineAvatars(scene)
+        end
+    end
+
+    
     -- Frog respawn logic
     local frog = scene:findNode("Frog")
 
@@ -187,21 +244,19 @@ function game.onUpdate(deltaTime, scene, animator)
         end
     end
 
+    
     -- Tower damage demo
     local tower = scene:findNode("Tower")
 
     if isDestructible(tower) and not tower:isDestroyed() then
-        -- Damage the tower slowly after 5 seconds.
         if elapsedTime > 5.0 then
             tryApplyDamage(tower, 10.0 * deltaTime)
         end
 
-        -- Fully destroy the tower after 15 seconds.
         if elapsedTime > 15.0 then
             tryApplyDamage(tower, 9999.0)
         end
 
-        -- Damage the tower when the frog is close to it.
         if frog ~= nil then
             local dx = frog:getPositionX() - tower:getPositionX()
             local dz = frog:getPositionZ() - tower:getPositionZ()
@@ -214,7 +269,8 @@ function game.onUpdate(deltaTime, scene, animator)
         end
     end
 
-    -- Particle System Demo
+    
+    -- Particle system demo
     if elapsedTime > 30.0 then
         local fire = scene:findNode("Fire")
         if fire ~= nil and fire.stopParticles ~= nil then
@@ -227,15 +283,12 @@ function game.onUpdate(deltaTime, scene, animator)
         end
     end
 
+    
+    -- Player avatar movement
+    updateLocalAvatar(scene)
 
-    -- Multiplayer
-    updateLocalAvatar()
-    local networkActive = false
-
-    if Net ~= nil and Net.isConnected ~= nil then
-        networkActive = Net.isConnected()
-    end
-
+    
+    -- Offline avatar animation
     if not networkActive then
         local avatar1 = playerAvatars[1]
         local avatar2 = playerAvatars[2]

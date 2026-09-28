@@ -43,10 +43,16 @@ public:
         g_lobbyState.isHost = true;
         g_lobbyState.lobbyReady = true;
 
-        // Configure lobby properties.
+        // Configure lobby config
+        // Private
+        // SteamMatchmaking()->SetLobbyType(
+        //     g_lobbyState.lobbyId,
+        //     k_ELobbyTypeFriendsOnly
+        // );
+        // Public
         SteamMatchmaking()->SetLobbyType(
             g_lobbyState.lobbyId,
-            k_ELobbyTypeFriendsOnly
+            k_ELobbyTypePublic
         );
         SteamMatchmaking()->SetLobbyMemberLimit(
             g_lobbyState.lobbyId,
@@ -76,7 +82,7 @@ public:
             pCallback->m_EChatRoomEnterResponse !=
                 k_EChatRoomEnterResponseSuccess) {
             std::cerr << "[Network] Lobby enter failed: "
-                      << pCallback->m_EChatRoomEnterResponse << std::endl;
+                    << pCallback->m_EChatRoomEnterResponse << std::endl;
             return;
         }
 
@@ -85,7 +91,9 @@ public:
         g_lobbyState.lobbyReady = true;
 
         std::cout << "[Network] Entered lobby: "
-                  << g_lobbyState.lobbyId.ConvertToUint64() << std::endl;
+                << g_lobbyState.lobbyId.ConvertToUint64() << std::endl;
+
+        net::NetworkManager::getInstance().finalizeLobbyJoin();
     }
 };
 static CLobbyEnterCallback g_lobbyEnterCallback;
@@ -245,7 +253,6 @@ void NetworkManager::shutdown() {
 
 // Lobby Management
 
-
 bool NetworkManager::hostPrivateLobby(std::string& outLobbyCode) {
     if (!m_initialized) {
         std::cerr << "[Network] Cannot host lobby: not initialized\n";
@@ -286,7 +293,8 @@ bool NetworkManager::hostPrivateLobby(std::string& outLobbyCode) {
     if (!g_lobbyState.pendingCreate && !g_lobbyState.pendingJoin) {
         g_lobbyState.pendingCreate = true;
         SteamAPICall_t hSteamAPICall =
-            SteamMatchmaking()->CreateLobby(k_ELobbyTypeFriendsOnly, MaxPlayers);
+            // Private -> SteamMatchmaking()->CreateLobby(k_ELobbyTypeFriendsOnly, MaxPlayers);
+            SteamMatchmaking()->CreateLobby(k_ELobbyTypePublic, MaxPlayers);
         g_lobbyCreatedCallback.m_callResult.Set(
             hSteamAPICall,
             &g_lobbyCreatedCallback,
@@ -412,13 +420,26 @@ void NetworkManager::showInviteDialog() {
 
 void NetworkManager::joinLobbyBySteamId(uint64_t steamLobbyId) {
 #ifdef CHISEL_ENABLE_STEAM
-    if (!m_initialized) return;
-    if (g_lobbyState.pendingJoin || g_lobbyState.pendingCreate) return;
+    if (!m_initialized) {
+        return;
+    }
+
+    // Do not allow the host to leave their lobby by accepting an invite.
+    if (m_connected && m_role == Role::Host) {
+        std::cerr << "[Network] Ignoring invite because we are already hosting a lobby." << std::endl;
+        return;
+    }
+
+    if (g_lobbyState.pendingJoin || g_lobbyState.pendingCreate) {
+        return;
+    }
 
     CSteamID lobbyId(steamLobbyId);
+
     g_lobbyState.pendingJoin = true;
-    
+
     SteamAPICall_t hSteamAPICall = SteamMatchmaking()->JoinLobby(lobbyId);
+
     g_lobbyEnterCallback.m_callResult.Set(
         hSteamAPICall,
         &g_lobbyEnterCallback,
@@ -663,6 +684,37 @@ void NetworkManager::syncPlayersFromLobby() {
 #endif
 }
 
+void NetworkManager::checkForPendingInvite(int argc, char** argv) {
+#ifdef CHISEL_ENABLE_STEAM
+    if (!m_initialized) {
+        return;
+    }
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+
+        if ((arg == "+connect_lobby" || arg == "-connect_lobby") &&
+            i + 1 < argc) {
+            try {
+                uint64_t lobbyId = std::stoull(argv[i + 1]);
+
+                std::cout << "[Network] Launch invite detected, joining lobby "
+                          << lobbyId << std::endl;
+
+                joinLobbyBySteamId(lobbyId);
+            } catch (...) {
+                std::cerr << "[Network] Failed to parse +connect_lobby argument" << std::endl;
+            }
+
+            return;
+        }
+    }
+#else
+    (void)argc;
+    (void)argv;
+#endif
+}
+
 PlayerSlot NetworkManager::findSlotBySteamId(SteamPlayerId steamId) const {
     for (const auto& player : m_players) {
         if (player.steamId == steamId) {
@@ -695,6 +747,26 @@ PlayerSlot NetworkManager::allocateFreeSlot() const {
         }
     }
     return InvalidSlot;
+}
+
+void NetworkManager::finalizeLobbyJoin() {
+#ifdef CHISEL_ENABLE_STEAM
+    if (!g_lobbyState.lobbyReady) {
+        return;
+    }
+
+    if (g_lobbyState.isHost) {
+        return;
+    }
+
+    m_role = Role::Client;
+    m_connected = true;
+
+    syncPlayersFromLobby();
+
+    std::cout << "[Network] Lobby join finalized. Local slot: "
+              << static_cast<int>(m_localSlot) << std::endl;
+#endif
 }
 
 }

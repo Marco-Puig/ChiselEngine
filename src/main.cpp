@@ -2,11 +2,10 @@
 #include "game/Game.h"
 #include <iostream>
 
-int main() {
+int main(int argc, char** argv) {
     try {
         Engine& engine = Engine::getInstance();
-        engine.init();
-        
+        engine.init(argc, argv);
         Game game;
         engine.run(&game);
     } catch (const std::exception& e) {

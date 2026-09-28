@@ -47,6 +47,8 @@ public:
     
     void showInviteDialog();
     void joinLobbyBySteamId(uint64_t steamLobbyId);
+    void finalizeLobbyJoin();
+    void checkForPendingInvite(int argc, char** argv);
 
 private:
     NetworkManager();
