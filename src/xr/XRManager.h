@@ -65,6 +65,8 @@ private:
     XrSession m_session = XR_NULL_HANDLE;
     XrSpace m_stageSpace = XR_NULL_HANDLE;
     XrSpace m_viewSpace = XR_NULL_HANDLE;
+    XrSpace m_leftHandSpace = XR_NULL_HANDLE;
+    XrSpace m_rightHandSpace = XR_NULL_HANDLE;
     XrSessionState m_sessionState = XR_SESSION_STATE_UNKNOWN;
     XrFrameState m_frameState{XR_TYPE_FRAME_STATE};
     XrActionSet m_actionSet = XR_NULL_HANDLE;

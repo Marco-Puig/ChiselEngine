@@ -489,6 +489,22 @@ XRControllerState XRManager::getControllerState(uint32_t controller) const {
 #ifdef CHISEL_ENABLE_OPENXR
     XRControllerState state{};
     state.select = controllerButtonPressed(controller, 0);
+
+    XrSpace handSpace = (controller == 0) ? m_leftHandSpace : m_rightHandSpace;
+    if (handSpace != XR_NULL_HANDLE) {
+        XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
+        
+        // Use xrLocateSpace. Correct signature for OpenXR 1.0:
+        // XrResult xrLocateSpace(XrSpace space, XrSpace baseSpace, XrTime time, XrSpaceLocation* location);
+        
+        if (xrLocateSpace(handSpace, m_stageSpace, 0, &location) == XR_SUCCESS && location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) {
+            state.position = glm::vec3(location.pose.position.x, location.pose.position.y, location.pose.position.z);
+            state.orientation = glm::quat(location.pose.orientation.w, location.pose.orientation.x, location.pose.orientation.y, location.pose.orientation.z);
+        }
+    }
+
+    state.trigger = state.select ? 1.0f : 0.0f;
+    
     return state;
 #else
     return {};
@@ -694,6 +710,20 @@ bool XRManager::createSession(Window& window) {
             xrCreateReferenceSpace(m_session, &viewSpaceInfo, &m_viewSpace),
             "xrCreateReferenceSpace(view)"
         )) {
+        return false;
+    }
+
+    // Create action spaces for hand tracking
+    XrActionSpaceCreateInfo actionSpaceInfo{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+
+    actionSpaceInfo.action = m_handPoseAction;
+    actionSpaceInfo.subactionPath = m_leftHandPath;
+    if (!check(xrCreateActionSpace(m_session, &actionSpaceInfo, &m_leftHandSpace), "xrCreateActionSpace(left)")) {
+        return false;
+    }
+
+    actionSpaceInfo.subactionPath = m_rightHandPath;
+    if (!check(xrCreateActionSpace(m_session, &actionSpaceInfo, &m_rightHandSpace), "xrCreateActionSpace(right)")) {
         return false;
     }
 
@@ -1073,6 +1103,16 @@ bool XRManager::createSwapchains() {
 void XRManager::destroySessionResources() {
     if (m_sessionReady && m_session != XR_NULL_HANDLE) {
         xrEndSession(m_session);
+    }
+
+    if (m_leftHandSpace != XR_NULL_HANDLE) {
+        xrDestroySpace(m_leftHandSpace);
+        m_leftHandSpace = XR_NULL_HANDLE;
+    }
+
+    if (m_rightHandSpace != XR_NULL_HANDLE) {
+        xrDestroySpace(m_rightHandSpace);
+        m_rightHandSpace = XR_NULL_HANDLE;
     }
 
     for (uint32_t eye = 0; eye < 2; ++eye) {

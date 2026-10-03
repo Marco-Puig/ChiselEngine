@@ -9,6 +9,10 @@
 #include "scene/ArcRotateCamera.h"
 #include "xr/VRPlayerRig.h"
 #include "xr/VRInput.h"
+#include "xr/InteractionManager.h"
+
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -151,6 +155,8 @@ void Engine::run(IGame* game) {
                     VRInputFrame input = gatherVRInput(xr);
                     vrRig.update(dt, input, rawView);
                     rigUpdated = true;
+
+                    InteractionManager::getInstance().update(input, vrRig.getRigToWorld());
                 }
 
                 const glm::mat4 finalView = vrRig.applyToView(rawView);
